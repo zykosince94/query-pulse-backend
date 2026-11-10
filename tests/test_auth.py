@@ -54,3 +54,26 @@ def test_session_cookie_is_http_only(client: TestClient) -> None:
     cookie = response.headers["set-cookie"].lower()
     assert "httponly" in cookie
     assert "samesite=lax" in cookie
+
+
+def test_auth_config_reports_demo_enabled(client: TestClient) -> None:
+    assert client.get("/api/auth/config").json() == {"demo_enabled": True}
+
+
+def test_try_the_demo_signs_in_as_read_only_user(client: TestClient) -> None:
+    response = client.post("/api/auth/demo")
+    assert response.status_code == 200
+    assert response.json() == {"username": "demo", "role": "demo", "read_only": True}
+    assert client.get("/api/auth/me").json()["read_only"] is True
+
+
+def test_try_the_demo_is_unavailable_when_disabled(database_url: str) -> None:
+    from query_pulse.main import create_app
+    from tests.conftest import make_settings, run_bootstrap
+
+    settings = make_settings(database_url, demo_enabled=False, demo_password=None)
+    run_bootstrap(settings)
+    with TestClient(create_app(settings)) as client:
+        assert client.get("/api/auth/config").json() == {"demo_enabled": False}
+        assert client.post("/api/auth/demo").status_code == 404
+        assert client.get("/api/auth/me").status_code == 401

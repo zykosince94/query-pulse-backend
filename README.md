@@ -17,8 +17,11 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
 - **Sign-in** with session cookies (HttpOnly, SameSite=Lax). Passwords are hashed with argon2id.
   An admin and an optional read-only demo user are created from the environment by
   `python -m query_pulse.accounts.bootstrap`.
-- **Access rules**: every API endpoint except health, sign-in and sign-out returns 401 without a
-  session; the demo user gets 403 on every write. Both are tested against every endpoint in
+- **"Try the demo"**: `GET /api/auth/config` tells the sign-in screen whether the demo is
+  enabled, and `POST /api/auth/demo` opens a read-only demo session without a password. It
+  returns 404 when `QP_DEMO_ENABLED` is false.
+- **Access rules**: every API endpoint except health and the sign-in endpoints returns 401
+  without a session; the demo user gets 403 on every write. Both are tested against every endpoint in
   `openapi.json`, so new endpoints are covered automatically.
 - **API contract**: `openapi.json` is generated from code and committed; CI fails if it is stale.
 - **Local stack** (`make demo`): app database, a demo PostgreSQL 16 with `pg_stat_statements` and

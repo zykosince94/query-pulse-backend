@@ -16,10 +16,13 @@ from fastapi.testclient import TestClient
 from tests.conftest import make_settings
 
 # Signing out is public: it must work for the demo user, and with no session it's a no-op.
+# The sign-in screen needs the auth config and "Try the demo" before anyone is signed in.
 PUBLIC = {
     ("GET", "/health"),
     ("GET", "/ready"),
+    ("GET", "/api/auth/config"),
     ("POST", "/api/auth/login"),
+    ("POST", "/api/auth/demo"),
     ("POST", "/api/auth/logout"),
 }
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}

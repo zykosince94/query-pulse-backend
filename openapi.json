@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "AuthConfig": {
+        "properties": {
+          "demo_enabled": {
+            "title": "Demo Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "demo_enabled"
+        ],
+        "title": "AuthConfig",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -367,6 +380,50 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/auth/config": {
+      "get": {
+        "description": "Public: what the sign-in screen should offer.",
+        "operationId": "getAuthConfig",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthConfig"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Auth Config",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/demo": {
+      "post": {
+        "description": "Public: sign in as the read-only demo user without a password (\"Try the demo\").\n\nSafe because the demo user can't change anything (every write returns 403) and the\nendpoint only works when the operator enabled the demo with QP_DEMO_ENABLED.",
+        "operationId": "loginAsDemo",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Login As Demo",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/login": {
       "post": {
         "operationId": "login",
