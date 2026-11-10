@@ -1,22 +1,106 @@
+# Local demo stack: `make demo` (or `docker compose up -d --build --wait`).
+#
+# Every credential below is a LOCAL DEMO default, overridable from the environment or a .env
+# file. Never reuse them anywhere real.
+name: query-pulse
+
 services:
-  postgres:
+  # The app's own database: users now; sources, observations and findings later.
+  app-db:
     image: postgres:16
     environment:
       POSTGRES_DB: querypulse
+      POSTGRES_USER: querypulse
+      POSTGRES_PASSWORD: querypulse
+    ports:
+      - "5432:5432"
+    volumes:
+      - app-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U querypulse -d querypulse"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # The monitored PostgreSQL that Query Pulse observes (read-only role `querypulse_monitor`).
+  demo-postgres:
+    image: postgres:16
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - compute_query_id=on
+    environment:
+      POSTGRES_DB: shop
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    volumes:
+      - demo-postgres-data:/var/lib/postgresql/data
+      - ./demo/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Healthy only once the extension exists, i.e. init scripts have finished.
+      test:
+        - CMD-SHELL
+        - >-
+          psql -U postgres -d shop -tAc
+          "SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'" | grep -q 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
+  # The monitored MongoDB: a single-node replica set (needed for profiler/oplog features).
+  # From the host, connect with: mongodb://localhost:27017/?directConnection=true
   mongo:
     image: mongo:7
+    command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
       - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      # Initiates the replica set on first run, then reports healthy once it has a primary.
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - >-
+          try { rs.status() } catch (e) {
+          rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }) };
+          if (!db.hello().isWritablePrimary) { quit(1) }
+      interval: 5s
+      timeout: 10s
+      start_period: 10s
+      retries: 30
 
   app:
     build: .
-    depends_on:
-      - postgres
-      - mongo
+    environment:
+      QP_ENVIRONMENT: dev
+      QP_DATABASE_URL: postgresql+psycopg://querypulse:querypulse@app-db:5432/querypulse
+      QP_SESSION_SECRET: ${QP_SESSION_SECRET:-local-demo-session-secret-not-for-real-use}
+      QP_FERNET_KEY: ${QP_FERNET_KEY:-PfEbNJ7_27539NZGeLQaJnx3E43Z83JYHklSCw4_g3E=}
+      QP_ADMIN_USERNAME: ${QP_ADMIN_USERNAME:-admin}
+      QP_ADMIN_PASSWORD: ${QP_ADMIN_PASSWORD:-admin-demo-password}
+      QP_DEMO_ENABLED: ${QP_DEMO_ENABLED:-true}
+      QP_DEMO_USERNAME: ${QP_DEMO_USERNAME:-demo}
+      QP_DEMO_PASSWORD: ${QP_DEMO_PASSWORD:-demo-password}
     ports:
       - "8000:8000"
+    depends_on:
+      app-db:
+        condition: service_healthy
+      demo-postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+volumes:
+  app-db-data:
+  demo-postgres-data:
+  mongo-data:
