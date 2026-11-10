@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <h1>Query Pulse</h1>
+  <p class="muted">Sign in to continue</p>
+
+  {% if form.errors %}
+    <div class="error">Invalid username or password.</div>
+  {% endif %}
+
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <div class="actions">
+      <button type="submit">Sign in</button>
+      <span class="muted">admin / demo users available</span>
+    </div>
+  </form>
+{% endblock %}
