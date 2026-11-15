@@ -14,6 +14,7 @@ from sqlalchemy.engine import Connection
 
 from query_pulse.accounts import models as _accounts_models  # noqa: F401  (registers tables)
 from query_pulse.db import Base, create_engine
+from query_pulse.sources import models as _sources_models  # noqa: F401
 
 config = context.config
 target_metadata = Base.metadata

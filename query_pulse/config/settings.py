@@ -33,9 +33,13 @@ class Settings(BaseSettings):
     session_https_only: bool = False
     session_max_age_seconds: int = Field(default=60 * 60 * 12, gt=0)
 
-    # Encrypts stored source credentials (used from Phase 2). Generate with:
+    # Encrypts stored source credentials. Comma-separate several keys to rotate: the first
+    # encrypts, all decrypt. Generate one with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     fernet_key: SecretStr
+
+    # Monitored-database connections (test connection, capability checks).
+    source_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
     # Users created by `python -m query_pulse.accounts.bootstrap`.
     admin_username: str = Field(default="admin", min_length=1)
@@ -44,13 +48,24 @@ class Settings(BaseSettings):
     demo_username: str = Field(default="demo", min_length=1)
     demo_password: SecretStr | None = None
 
+    @property
+    def fernet_keys(self) -> list[str]:
+        return [k.strip() for k in self.fernet_key.get_secret_value().split(",") if k.strip()]
+
     @field_validator("fernet_key")
     @classmethod
     def _valid_fernet_key(cls, value: SecretStr) -> SecretStr:
+        keys = [k.strip() for k in value.get_secret_value().split(",") if k.strip()]
         try:
-            Fernet(value.get_secret_value().encode())
+            if not keys:
+                raise ValueError
+            for key in keys:
+                Fernet(key.encode())
         except (ValueError, TypeError) as exc:
-            raise ValueError("QP_FERNET_KEY must be a url-safe base64 32-byte Fernet key") from exc
+            raise ValueError(
+                "QP_FERNET_KEY must be one or more comma-separated url-safe base64 32-byte "
+                "Fernet keys"
+            ) from exc
         return value
 
     @model_validator(mode="after")

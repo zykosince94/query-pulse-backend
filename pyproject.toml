@@ -14,6 +14,7 @@ dependencies = [
     "argon2-cffi>=23.1",
     "cryptography>=43",
     "itsdangerous>=2.2",
+    "pymongo>=4.13",
 ]
 
 [dependency-groups]
@@ -23,6 +24,7 @@ dev = [
     "aiosqlite>=0.20",
     "ruff>=0.7",
     "mypy>=1.13",
+    "testcontainers[mongodb,postgres]>=4.8",
 ]
 
 [build-system]
@@ -35,6 +37,7 @@ packages = ["query_pulse"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+markers = ["integration: needs Docker (real PostgreSQL and MongoDB via testcontainers)"]
 pythonpath = ["."]
 filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]  # upstream notice, not our code
 

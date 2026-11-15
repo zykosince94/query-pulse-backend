@@ -16,8 +16,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from query_pulse import __doc__ as description
 from query_pulse.accounts.router import router as auth_router
 from query_pulse.config import Settings, get_settings
+from query_pulse.crypto import CredentialCipher
 from query_pulse.db import create_engine, create_sessionmaker
-from query_pulse.sources.registry import SourceRegistry
 from query_pulse.sources.router import router as sources_router
 
 VERSION = "0.1.0"
@@ -38,7 +38,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.engine = engine
     app.state.sessionmaker = create_sessionmaker(engine)
-    app.state.source_registry = SourceRegistry()
+    app.state.cipher = CredentialCipher(settings.fernet_keys)
 
     app.add_middleware(
         SessionMiddleware,
