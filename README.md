@@ -72,6 +72,11 @@ Tests run against a fresh SQLite database per test, built by the real Alembic mi
 they need no Docker. Integration tests against real PostgreSQL and MongoDB (testcontainers)
 arrive with Phase 2.
 
+## Documentation
+
+- [Functionality reference](docs/functionality.md): every screen, endpoint, setting and security
+  behaviour across the backend and frontend, as of today.
+
 ## Layout
 
 ```

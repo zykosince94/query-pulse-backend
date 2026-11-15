@@ -1,7 +1,8 @@
 # Local demo stack: `make demo` (or `docker compose up -d --build --wait`).
 #
 # Every credential below is a LOCAL DEMO default, overridable from the environment or a .env
-# file. Never reuse them anywhere real.
+# file. Never reuse them anywhere real. Ports are bound to 127.0.0.1 so the databases (with
+# these defaults, and MongoDB without auth) are reachable only from this machine.
 name: query-pulse
 
 services:
@@ -13,7 +14,7 @@ services:
       POSTGRES_USER: querypulse
       POSTGRES_PASSWORD: querypulse
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - app-db-data:/var/lib/postgresql/data
     healthcheck:
@@ -38,7 +39,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - demo-postgres-data:/var/lib/postgresql/data
       - ./demo/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -59,7 +60,7 @@ services:
     image: mongo:7
     command: ["--replSet", "rs0", "--bind_ip_all"]
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     volumes:
       - mongo-data:/data/db
     healthcheck:
@@ -91,7 +92,7 @@ services:
       QP_DEMO_USERNAME: ${QP_DEMO_USERNAME:-demo}
       QP_DEMO_PASSWORD: ${QP_DEMO_PASSWORD:-demo-password}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     depends_on:
       app-db:
         condition: service_healthy

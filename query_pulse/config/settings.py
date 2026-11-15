@@ -61,6 +61,14 @@ class Settings(BaseSettings):
             raise ValueError("QP_DEMO_USERNAME must differ from QP_ADMIN_USERNAME")
         return self
 
+    @model_validator(mode="after")
+    def _prod_needs_secure_cookies(self) -> Settings:
+        # Production runs behind HTTPS; without the Secure flag the session cookie could be
+        # sent over plain HTTP and read by anyone on the network path.
+        if self.environment == "prod" and not self.session_https_only:
+            raise ValueError("QP_SESSION_HTTPS_ONLY must be true when QP_ENVIRONMENT is prod")
+        return self
+
 
 @lru_cache
 def get_settings() -> Settings:

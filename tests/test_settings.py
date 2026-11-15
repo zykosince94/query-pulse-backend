@@ -17,6 +17,7 @@ URL = "sqlite+aiosqlite:///:memory:"
         ({"demo_enabled": True, "demo_password": None}, "QP_DEMO_PASSWORD"),
         ({"demo_username": "admin"}, "QP_DEMO_USERNAME"),
         ({"environment": "staging"}, "environment"),
+        ({"environment": "prod", "session_https_only": False}, "QP_SESSION_HTTPS_ONLY"),
     ],
 )
 def test_invalid_settings_fail_fast(overrides: dict[str, Any], message: str) -> None:
@@ -39,3 +40,8 @@ def test_secrets_are_not_shown_in_repr() -> None:
     settings = make_settings(URL)
     assert "admin-password-for-tests" not in repr(settings)
     assert settings.session_secret.get_secret_value() not in repr(settings)
+
+
+def test_prod_with_secure_cookies_is_accepted() -> None:
+    settings = make_settings(URL, environment="prod", session_https_only=True)
+    assert settings.session_https_only is True
