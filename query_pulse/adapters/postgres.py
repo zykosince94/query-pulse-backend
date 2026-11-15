@@ -27,6 +27,18 @@ MIN_SUPPORTED_VERSION = 160000  # PostgreSQL 16: needed for EXPLAIN (GENERIC_PLA
 _SSLMODE = {"disable": "disable", "require": "require", "verify-full": "verify-full"}
 
 
+def tls_options(tls_mode: str) -> tuple[str, str | None]:
+    """libpq (sslmode, sslrootcert) for a mode.
+
+    "verify-full" checks the certificate chain and hostname. By default libpq looks for a CA
+    file at ~/.postgresql/root.crt, which doesn't exist in our container, so every verified
+    connection would fail. `sslrootcert=system` (libpq 16+) uses the OS's trusted CAs instead,
+    which is what managed databases (RDS, Cloud SQL, Azure) are signed by. psycopg leaves out
+    options that are None.
+    """
+    return _SSLMODE[tls_mode], ("system" if tls_mode == "verify-full" else None)
+
+
 def _classify(exc: Exception, params: ConnectionParams) -> AdapterError:
     """Map a driver error to a code and a message for the person fixing it.
 
@@ -92,6 +104,7 @@ class PostgresAdapter:
 
     async def probe(self, params: ConnectionParams) -> ProbeResult:
         started = time.perf_counter()
+        sslmode, sslrootcert = tls_options(params.tls_mode)
         try:
             # Belt and braces: psycopg's connect_timeout plus an overall asyncio timeout, so a
             # host that accepts TCP but never speaks can't hang the request.
@@ -102,7 +115,8 @@ class PostgresAdapter:
                     dbname=params.database,
                     user=params.username,
                     password=params.password or None,
-                    sslmode=_SSLMODE[params.tls_mode],
+                    sslmode=sslmode,
+                    sslrootcert=sslrootcert,
                     connect_timeout=max(1, round(params.connect_timeout)),
                     application_name=APPLICATION_NAME,
                     options="-c default_transaction_read_only=on -c statement_timeout=5000",

@@ -354,3 +354,119 @@ def test_marker_password_never_leaks(admin: TestClient, caplog: pytest.LogCaptur
         assert MARKER not in record.getMessage()
         assert MARKER not in str(record.args)
     assert any("source check" in r.getMessage() for r in caplog.records), "checks are logged"
+
+
+# --- review fix 1: a stored password only goes to the server it was saved for ----------------
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"host": "attacker.example"}, {"port": 6543}, {"username": "other"}, {"engine": "mongodb"}],
+)
+def test_update_to_a_new_target_requires_the_password(
+    admin: TestClient, fake: FakeAdapter, change: dict[str, Any]
+) -> None:
+    created = create(admin, password="STORED-SECRET")
+    calls_before = len(fake.calls)
+    response = admin.put(f"/api/sources/{created['id']}", json=update_body(**change))
+    assert response.status_code == 400
+    assert "Enter the password again" in response.json()["detail"]
+    assert len(fake.calls) == calls_before, "the stored password was never sent anywhere"
+    assert admin.get(f"/api/sources/{created['id']}").json()["host"] == "ok.example"
+
+
+def test_update_to_a_new_target_works_with_the_password_retyped(
+    admin: TestClient, fake: FakeAdapter
+) -> None:
+    created = create(admin, password="STORED-SECRET")
+    body = update_body(host="replica.example", password="typed-again")
+    response = admin.put(f"/api/sources/{created['id']}", json=body)
+    assert response.status_code == 200
+    assert fake.calls[-1].host == "replica.example"
+    assert fake.calls[-1].password == "typed-again"
+
+
+def test_same_server_changes_may_reuse_the_stored_password(
+    admin: TestClient, fake: FakeAdapter
+) -> None:
+    created = create(admin, password="STORED-SECRET")
+    body = update_body(database="sales", tls_mode="verify-full")
+    assert admin.put(f"/api/sources/{created['id']}", json=body).status_code == 200
+    assert fake.calls[-1].password == "STORED-SECRET"
+
+
+def test_connection_test_wont_send_a_stored_password_to_a_new_host(
+    admin: TestClient, fake: FakeAdapter
+) -> None:
+    created = create(admin, password="STORED-SECRET")
+    calls_before = len(fake.calls)
+    body = source(host="attacker.example", source_id=created["id"])
+    body.pop("name")
+    body.pop("password")
+    response = admin.post("/api/sources/test", json=body)
+    assert response.status_code == 400
+    assert "Enter the password again" in response.json()["detail"]
+    assert len(fake.calls) == calls_before
+
+
+def test_a_source_without_a_password_can_change_target_freely(
+    admin: TestClient, fake: FakeAdapter
+) -> None:
+    created = create(admin, engine="mongodb", port=27017, username="", password="")
+    body = update_body(engine="mongodb", port=27017, username="", host="mongo2.example")
+    assert admin.put(f"/api/sources/{created['id']}", json=body).status_code == 200
+    assert fake.calls[-1].host == "mongo2.example"
+
+
+# --- review fix 3: name, description and enabled can change without a connection test ---------
+
+
+def test_metadata_only_update_needs_no_connection(
+    admin: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = create(admin)
+
+    class Unreachable(FakeAdapter):
+        async def probe(self, params: ConnectionParams) -> ProbeResult:
+            raise AssertionError("a metadata-only update must not connect")
+
+    monkeypatch.setattr(service, "adapter_for", lambda engine: Unreachable())
+    body = update_body(name="Orders (retired)", enabled=False, description="moved to v2")
+    response = admin.put(f"/api/sources/{created['id']}", json=body)
+    assert response.status_code == 200
+    updated = response.json()
+    assert (updated["name"], updated["enabled"], updated["description"]) == (
+        "Orders (retired)",
+        False,
+        "moved to v2",
+    )
+    assert updated["status"] == created["status"]
+    assert updated["capabilities"] == created["capabilities"]
+    assert updated["last_checked_at"] == created["last_checked_at"]
+
+
+def test_connection_change_still_requires_a_passing_test(admin: TestClient) -> None:
+    created = create(admin)
+    body = update_body(database="sales", host="ok.example")
+    body["host"] = "badpass.example"
+    body["password"] = "x"
+    assert admin.put(f"/api/sources/{created['id']}", json=body).status_code == 400
+
+
+# --- review fix 4: names are unique ignoring case, enforced by the database -----------------
+
+
+def test_database_rejects_a_case_variant_name_even_past_the_app_check(
+    admin: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    create(admin, name="Orders DB")
+    from query_pulse.sources import router as sources_router
+
+    async def no_check(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    # Simulate two requests passing the early check at the same moment.
+    monkeypatch.setattr(sources_router, "_ensure_unique_name", no_check)
+    response = admin.post("/api/sources", json=source(name="orders db"))
+    assert response.status_code == 409
+    assert [s["name"] for s in admin.get("/api/sources").json()] == ["Orders DB"]

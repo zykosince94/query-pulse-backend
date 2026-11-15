@@ -134,10 +134,15 @@ works without CORS.
 - **Save** is enabled only after a successful test of the *current* connection settings. Changing
   host, port, database, username, password, TLS mode or engine afterwards disables it and says
   "Test again before saving". Changing only the name or description doesn't.
+- When **editing**, if the connection settings are exactly as saved, Save needs no test ("Connection
+  settings unchanged: no test needed"), so a source whose database is down can still be renamed,
+  described or disabled.
 - A source with missing capabilities can still be saved; the result says how many features are
   unavailable and that they can be fixed later.
 - Editing: the password field starts empty. Leaving it blank keeps the saved password (the test
-  then uses the stored one); typing a new one replaces it.
+  then uses the stored one); typing a new one replaces it. If the engine, host, port or username
+  changes, the saved password can't be reused: the field asks for it again, and Test and Save stay
+  disabled until it's typed. A saved password is only ever sent to the server it was saved for.
 - Errors from saving (for example "A source named 'Orders DB' exists") appear above the buttons.
 
 **Detail** (`/sources/:id`)
@@ -210,7 +215,7 @@ connection test.
 | `GET /api/sources/{source_id}` | Session | `200` source with its capability checklist | `401`, `404` |
 | `POST /api/sources/test` | Admin | `200` connection test result (never saves) | `401`, `403`, `404` unknown `source_id`, `422` |
 | `POST /api/sources` | Admin | `201` source with checklist | `400` connection failed (nothing saved), `401`, `403`, `409` name in use, `422` |
-| `PUT /api/sources/{source_id}` | Admin | `200` source with checklist | `400` connection failed (nothing changed), `401`, `403`, `404`, `409`, `422` |
+| `PUT /api/sources/{source_id}` | Admin | `200` source with checklist. If only `name`, `description` or `enabled` changed (and no password is sent), it saves without a connection test. | `400` connection failed or password must be re-entered (nothing changed), `401`, `403`, `404`, `409`, `422` |
 | `POST /api/sources/{source_id}/check` | Admin | `200` source, re-checked with its stored settings | `401`, `403`, `404` |
 | `DELETE /api/sources/{source_id}` | Admin | `204` | `401`, `403`, `404` |
 | `GET /api/collector/status` | Session | `200 {"status": "not_running", "source_count": 2, "message": "…"}` (placeholder until Phase 3) | `401` |
@@ -225,8 +230,8 @@ connection test.
 | `port` | integer | 1–65535 |
 | `database` | string | 1–120 characters |
 | `username` | string | required for PostgreSQL; optional for MongoDB without auth |
-| `password` | string | create: optional, default empty. Update: omit or `null` keeps the stored password, `""` removes it. |
-| `tls_mode` | `"disable"`, `"require"` or `"verify-full"` | default `disable`. `require` encrypts without checking the certificate; `verify-full` also checks it. |
+| `password` | string | create: optional, default empty. Update: omit or `null` keeps the stored password, `""` removes it. Keeping it is refused (400, "Enter the password again…") if the engine, host, port or username changed. |
+| `tls_mode` | `"disable"`, `"require"` or `"verify-full"` | default `disable`. `require` encrypts without checking the certificate; `verify-full` also checks the certificate chain and hostname against the operating system's trusted CAs (for PostgreSQL via `sslrootcert=system`). |
 | `enabled` | boolean | default `true` (used by the collector from Phase 3) |
 | `description` | string | up to 500 characters |
 
@@ -244,8 +249,9 @@ connection test.
 
 **Connection test.** Send the connection fields (`engine`, `host`, `port`, `database`,
 `username`, `tls_mode`) and a `password`. When editing an existing source, send `source_id` and
-leave out `password` to test with the stored one. A failed connection is a normal result, not an
-HTTP error:
+leave out `password` to test with the stored one; this is refused with 400 if the engine, host,
+port or username differ from the saved source (the stored password is only sent to its own
+server). A failed connection is a normal result, not an HTTP error:
 
 ```json
 { "ok": false, "error": { "code": "auth_failed", "message": "PostgreSQL rejected the username or password for user 'monitor'." },
@@ -275,6 +281,14 @@ a `reason` and the exact `fix`:
 use a 5-second `statement_timeout`, and identify themselves as `application_name=query-pulse`.
 MongoDB connections go directly to the given node (`directConnection`), authenticate against
 `admin` when a username is set, and only read the profiling level, never change it.
+
+**Names** are unique ignoring case ("Orders" and "orders" clash), enforced by a unique index on
+`lower(name)` in the database, so two simultaneous requests can't both succeed.
+
+**Accepted risk: network probing by the admin.** Test connection connects wherever the admin
+points it, so different error codes reveal whether a host and port answer. That's inherent to the
+feature and limited to the admin. If Query Pulse is ever hosted for others, add an allowlist of
+reachable networks.
 
 ---
 
@@ -383,7 +397,7 @@ Push backend API changes first, then regenerate and push the frontend.
 | QP-AC-07: an unreachable host or wrong password fails within the timeout with a clear error, and nothing is saved | Done | Integration tests (wrong password, unknown database, closed port, unresolvable host, timed); `test_sources.py` (nothing saved); Playwright wrong-password journey |
 | QP-AC-08: a marker password never appears in any response body or log line | Done | `test_sources.py::test_marker_password_never_leaks` (every source endpoint, success and failure, plus all log records) |
 
-Test counts: 86 backend unit and 14 backend integration (pytest), 39 frontend (Vitest), 6
+Test counts: 101 backend unit and 17 backend integration (pytest), 43 frontend (Vitest), 6
 end-to-end (Playwright).
 
 ---

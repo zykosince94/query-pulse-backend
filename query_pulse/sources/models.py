@@ -8,10 +8,12 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
     UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -46,7 +48,8 @@ class DataSource(TimestampMixin, Base):
     __tablename__ = "data_sources"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True)
+    # Unique ignoring case: see the functional index below.
+    name: Mapped[str] = mapped_column(String(120))
     engine: Mapped[SourceEngine] = mapped_column(_enum(SourceEngine, "source_engine"))
     host: Mapped[str] = mapped_column(String(255))
     port: Mapped[int] = mapped_column(Integer)
@@ -72,6 +75,11 @@ class DataSource(TimestampMixin, Base):
         order_by="SourceCapability.position",
         lazy="selectin",
     )
+
+
+# "Orders" and "orders" are the same name. A functional unique index enforces it in the
+# database, so two concurrent requests can't both pass the application-level check.
+Index("uq_data_sources_lower_name", func.lower(DataSource.name), unique=True)
 
 
 class SourceCapability(Base):

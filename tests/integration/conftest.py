@@ -134,3 +134,25 @@ def mongo() -> Iterator[MongoServer]:
             )
             client.shop.orders.insert_one({"customerId": 1})
         yield MongoServer(host, port, root_url, container.username, container.password)
+
+
+@pytest.fixture(scope="session")
+def pg_tls() -> Iterator[Server]:
+    """PostgreSQL 16 with TLS on, using the image's self-signed "snakeoil" certificate.
+
+    Self-signed means: encryption works ("require"), but certificate verification
+    ("verify-full") must fail, because no trusted CA signed it.
+    """
+    container = PostgresContainer("postgres:16", driver=None).with_command(
+        "postgres -c ssl=on "
+        "-c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem "
+        "-c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key"
+    )
+    with container:
+        _superuser_sql(
+            container,
+            container.dbname,
+            "CREATE ROLE monitor LOGIN PASSWORD 'monitor-pass'",
+            "GRANT pg_monitor TO monitor",
+        )
+        yield Server(_host(container), int(container.get_exposed_port(5432)))

@@ -179,3 +179,38 @@ def test_mongo_closed_port_fails_within_the_timeout() -> None:
     code, elapsed = expect_error("mongodb", Server("127.0.0.1", free_port()), "shop", "", "")
     assert code in {ErrorCode.UNREACHABLE, ErrorCode.TIMEOUT}
     assert elapsed < TIMEOUT + 6
+
+
+# --- TLS (review fix 2) ----------------------------------------------------------------------
+
+
+def probe_tls(server: Server, tls_mode: str) -> ProbeResult:
+    params = ConnectionParams(
+        host=server.host,
+        port=server.port,
+        database="test",
+        username="monitor",
+        password="monitor-pass",
+        tls_mode=tls_mode,  # type: ignore[arg-type]
+        connect_timeout=TIMEOUT,
+    )
+    return asyncio.run(adapter_for("postgres").probe(params))
+
+
+def test_pg_tls_require_encrypts(pg_tls: Server) -> None:
+    assert probe_tls(pg_tls, "require").server_version.startswith("16")
+
+
+def test_pg_tls_verify_full_rejects_an_untrusted_certificate(pg_tls: Server) -> None:
+    """Verification really runs against the system CAs (not a missing root.crt file)."""
+    with pytest.raises(AdapterError) as excinfo:
+        probe_tls(pg_tls, "verify-full")
+    assert excinfo.value.code is ErrorCode.TLS
+    assert "root.crt" not in excinfo.value.message
+    assert "certificate" in excinfo.value.message.lower()
+
+
+def test_pg_tls_required_by_client_but_server_has_none(pg_plain: Server) -> None:
+    with pytest.raises(AdapterError) as excinfo:
+        probe_tls(pg_plain, "require")
+    assert excinfo.value.code is ErrorCode.TLS

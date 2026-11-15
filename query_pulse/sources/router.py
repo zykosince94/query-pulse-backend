@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from query_pulse.accounts.dependencies import SessionDep, Writer, current_user
 from query_pulse.adapters import AdapterError
@@ -53,6 +54,21 @@ async def _ensure_unique_name(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=f"A source named '{name}' exists")
 
 
+async def _commit_or_409(session: SessionDep, name: str) -> None:
+    """Commit, turning a unique-name violation into 409.
+
+    `_ensure_unique_name` gives a friendly early answer, but two requests can pass it at the
+    same moment; the case-insensitive unique index is what actually guarantees uniqueness.
+    """
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, detail=f"A source named '{name}' exists"
+        ) from None
+
+
 @router.get("/sources", response_model=list[SourceOut], operation_id="listSources")
 async def list_sources(session: SessionDep) -> list[SourceOut]:
     sources = await session.scalars(select(DataSource).order_by(func.lower(DataSource.name)))
@@ -65,7 +81,10 @@ async def get_source(source_id: int, session: SessionDep) -> SourceDetail:
 
 
 @router.post(
-    "/sources/test", response_model=ConnectionTestResult, operation_id="testSourceConnection"
+    "/sources/test",
+    response_model=ConnectionTestResult,
+    operation_id="testSourceConnection",
+    responses={400: {"description": "A stored password can't be reused for a different server"}},
 )
 async def test_connection(
     payload: ConnectionTestRequest, request: Request, session: SessionDep, _: Writer
@@ -80,7 +99,9 @@ async def test_connection(
     elif payload.source_id is not None:
         existing = await _get_or_404(session, payload.source_id)
         try:
-            password = service.stored_password(existing, _cipher(request))
+            password = service.reusable_password(existing, payload, _cipher(request))
+        except service.PasswordRequiredError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
         except AdapterError as error:
             return service.test_failure(error)
     else:
@@ -124,7 +145,7 @@ async def create_source(
     )
     service.record_success(source, result)
     session.add(source)
-    await session.commit()
+    await _commit_or_409(session, payload.name)
     await session.refresh(source)
     return service.to_detail(source)
 
@@ -138,17 +159,33 @@ async def create_source(
 async def update_source(
     source_id: int, payload: SourceUpdate, request: Request, session: SessionDep, _: Writer
 ) -> SourceDetail:
-    """Replace a source's settings. The new settings must pass a connection test."""
+    """Replace a source's settings.
+
+    Changing how to connect (engine, host, port, database, username, TLS, password) requires a
+    passing connection test. Changing only the name, description or `enabled` doesn't, so a
+    source whose database is down can still be renamed or disabled.
+    """
     source = await _get_or_404(session, source_id)
     await _ensure_unique_name(session, payload.name, exclude_id=source.id)
+
+    if payload.password is None and not service.connection_changed(source, payload):
+        source.name = payload.name
+        source.enabled = payload.enabled
+        source.description = payload.description
+        await _commit_or_409(session, payload.name)
+        await session.refresh(source)
+        return service.to_detail(source)
+
     cipher = _cipher(request)
     try:
         password = (
             payload.password.get_secret_value()
             if payload.password is not None
-            else service.stored_password(source, cipher)
+            else service.reusable_password(source, payload, cipher)
         )
         result = await service.probe(payload, password, _timeout(request))
+    except service.PasswordRequiredError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from None
     except AdapterError as error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error.message) from None
 
@@ -164,7 +201,7 @@ async def update_source(
     if payload.password is not None:
         source.password_encrypted = cipher.encrypt(password) if password else None
     service.record_success(source, result)
-    await session.commit()
+    await _commit_or_409(session, payload.name)
     await session.refresh(source)
     return service.to_detail(source)
 

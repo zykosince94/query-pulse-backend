@@ -36,6 +36,45 @@ def params_for(fields: ConnectionFields, password: str, timeout: float) -> Conne
     )
 
 
+# Where a stored password is allowed to go. Changing any of these and reusing the saved
+# password would let someone send it to a server they control, so a new target needs the
+# password typed again. (Database and TLS mode can change: same server, same credentials.)
+TARGET_FIELDS = ("engine", "host", "port", "username")
+# Everything a connection test depends on. If none of these change (and no new password is
+# sent), an update only touches name/description/enabled and needs no connection test, so a
+# source whose database is down can still be renamed or disabled.
+CONNECTION_FIELDS = (*TARGET_FIELDS, "database", "tls_mode")
+
+RETARGET_MESSAGE = (
+    "Enter the password again: the engine, host, port or username changed, and a saved "
+    "password is only ever sent to the server it was saved for."
+)
+
+
+def target_changed(source: DataSource, fields: ConnectionFields) -> bool:
+    return any(getattr(source, f) != getattr(fields, f) for f in TARGET_FIELDS)
+
+
+def connection_changed(source: DataSource, fields: ConnectionFields) -> bool:
+    return any(getattr(source, f) != getattr(fields, f) for f in CONNECTION_FIELDS)
+
+
+def reusable_password(
+    source: DataSource, fields: ConnectionFields, cipher: CredentialCipher
+) -> str:
+    """The stored password, if it may be used to connect with `fields`.
+
+    Raises PasswordRequiredError when the target changed and a password is stored.
+    """
+    if source.password_encrypted and target_changed(source, fields):
+        raise PasswordRequiredError(RETARGET_MESSAGE)
+    return stored_password(source, cipher)
+
+
+class PasswordRequiredError(Exception):
+    """The request would reuse a stored password for a different server."""
+
+
 def stored_password(source: DataSource, cipher: CredentialCipher) -> str:
     if not source.password_encrypted:
         return ""

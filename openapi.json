@@ -1015,6 +1015,9 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "A stored password can't be reused for a different server"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1107,7 +1110,7 @@
         ]
       },
       "put": {
-        "description": "Replace a source's settings. The new settings must pass a connection test.",
+        "description": "Replace a source's settings.\n\nChanging how to connect (engine, host, port, database, username, TLS, password) requires a\npassing connection test. Changing only the name, description or `enabled` doesn't, so a\nsource whose database is down can still be renamed or disabled.",
         "operationId": "updateSource",
         "parameters": [
           {
