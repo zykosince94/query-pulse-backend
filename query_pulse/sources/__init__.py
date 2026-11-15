@@ -1,5 +1,3 @@
-"""Data sources. Phase 1 placeholder: an in-memory registry with stubbed checks.
-
-Phase 2 replaces this with stored DataSource rows, Fernet-encrypted credentials, real
-adapters (``query_pulse/adapters/``), test-connection and capability discovery.
+"""Data sources: stored connection settings with Fernet-encrypted credentials, connection
+tests, and the capability checklist (what works on each source and how to fix what doesn't).
 """

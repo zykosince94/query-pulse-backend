@@ -14,6 +14,235 @@
         "title": "AuthConfig",
         "type": "object"
       },
+      "CapabilityOut": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "feature": {
+            "title": "Feature",
+            "type": "string"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "feature",
+          "label",
+          "available",
+          "reason",
+          "fix"
+        ],
+        "title": "CapabilityOut",
+        "type": "object"
+      },
+      "CollectorStatus": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "source_count": {
+            "title": "Source Count",
+            "type": "integer"
+          },
+          "status": {
+            "const": "not_running",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "source_count",
+          "message"
+        ],
+        "title": "CollectorStatus",
+        "type": "object"
+      },
+      "ConnectionErrorOut": {
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ConnectionErrorOut",
+        "type": "object"
+      },
+      "ConnectionTestRequest": {
+        "properties": {
+          "database": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Database",
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/SourceEngine"
+          },
+          "host": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Host",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 1024,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
+          "port": {
+            "maximum": 65535.0,
+            "minimum": 1.0,
+            "title": "Port",
+            "type": "integer"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "tls_mode": {
+            "default": "disable",
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode",
+            "type": "string"
+          },
+          "username": {
+            "default": "",
+            "maxLength": 120,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine",
+          "host",
+          "port",
+          "database"
+        ],
+        "title": "ConnectionTestRequest",
+        "type": "object"
+      },
+      "ConnectionTestResult": {
+        "properties": {
+          "capabilities": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CapabilityOut"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConnectionErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ConnectionTestResult",
+        "type": "object"
+      },
+      "ErrorCode": {
+        "enum": [
+          "unreachable",
+          "timeout",
+          "auth_failed",
+          "tls",
+          "database_not_found",
+          "permission_denied",
+          "unsupported_version",
+          "unknown"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -57,65 +286,6 @@
         "title": "Role",
         "type": "string"
       },
-      "SourceConnectionRequest": {
-        "properties": {
-          "database": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Database",
-            "type": "string"
-          },
-          "host": {
-            "maxLength": 255,
-            "minLength": 1,
-            "title": "Host",
-            "type": "string"
-          },
-          "name": {
-            "maxLength": 120,
-            "minLength": 2,
-            "title": "Name",
-            "type": "string"
-          },
-          "password": {
-            "default": "",
-            "format": "password",
-            "title": "Password",
-            "type": "string",
-            "writeOnly": true
-          },
-          "port": {
-            "maximum": 65535.0,
-            "minimum": 1.0,
-            "title": "Port",
-            "type": "integer"
-          },
-          "ssl": {
-            "default": false,
-            "title": "Ssl",
-            "type": "boolean"
-          },
-          "type": {
-            "$ref": "#/components/schemas/SourceType"
-          },
-          "username": {
-            "maxLength": 120,
-            "minLength": 1,
-            "title": "Username",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name",
-          "type",
-          "host",
-          "port",
-          "database",
-          "username"
-        ],
-        "title": "SourceConnectionRequest",
-        "type": "object"
-      },
       "SourceCreate": {
         "properties": {
           "database": {
@@ -126,6 +296,7 @@
           },
           "description": {
             "default": "",
+            "maxLength": 500,
             "title": "Description",
             "type": "string"
           },
@@ -134,17 +305,13 @@
             "title": "Enabled",
             "type": "boolean"
           },
+          "engine": {
+            "$ref": "#/components/schemas/SourceEngine"
+          },
           "host": {
             "maxLength": 255,
             "minLength": 1,
             "title": "Host",
-            "type": "string"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "title": "Id",
             "type": "string"
           },
           "name": {
@@ -156,6 +323,7 @@
           "password": {
             "default": "",
             "format": "password",
+            "maxLength": 1024,
             "title": "Password",
             "type": "string",
             "writeOnly": true
@@ -166,17 +334,134 @@
             "title": "Port",
             "type": "integer"
           },
-          "ssl": {
-            "default": false,
-            "title": "Ssl",
-            "type": "boolean"
-          },
-          "type": {
-            "$ref": "#/components/schemas/SourceType"
+          "tls_mode": {
+            "default": "disable",
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode",
+            "type": "string"
           },
           "username": {
+            "default": "",
             "maxLength": 120,
-            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine",
+          "host",
+          "port",
+          "database",
+          "name"
+        ],
+        "title": "SourceCreate",
+        "type": "object"
+      },
+      "SourceDetail": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/CapabilityOut"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "database": {
+            "title": "Database",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/SourceEngine"
+          },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "host": {
+            "title": "Host",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          },
+          "status": {
+            "$ref": "#/components/schemas/SourceStatus"
+          },
+          "tls_mode": {
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
             "title": "Username",
             "type": "string"
           }
@@ -184,49 +469,164 @@
         "required": [
           "id",
           "name",
-          "type",
+          "engine",
           "host",
           "port",
           "database",
-          "username"
+          "username",
+          "tls_mode",
+          "enabled",
+          "description",
+          "has_password",
+          "server_version",
+          "status",
+          "last_checked_at",
+          "last_error",
+          "created_at",
+          "updated_at",
+          "capabilities"
         ],
-        "title": "SourceCreate",
+        "title": "SourceDetail",
         "type": "object"
       },
-      "SourceHealth": {
+      "SourceEngine": {
+        "enum": [
+          "postgres",
+          "mongodb"
+        ],
+        "title": "SourceEngine",
+        "type": "string"
+      },
+      "SourceOut": {
         "properties": {
-          "engine": {
-            "$ref": "#/components/schemas/SourceType"
-          },
-          "message": {
-            "title": "Message",
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
             "type": "string"
           },
-          "ready": {
-            "title": "Ready",
+          "database": {
+            "title": "Database",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
             "type": "boolean"
           },
-          "source_id": {
-            "title": "Source Id",
+          "engine": {
+            "$ref": "#/components/schemas/SourceEngine"
+          },
+          "has_password": {
+            "title": "Has Password",
+            "type": "boolean"
+          },
+          "host": {
+            "title": "Host",
             "type": "string"
           },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Checked At"
+          },
+          "last_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "port": {
+            "title": "Port",
+            "type": "integer"
+          },
+          "server_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Version"
+          },
           "status": {
-            "title": "Status",
+            "$ref": "#/components/schemas/SourceStatus"
+          },
+          "tls_mode": {
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
             "type": "string"
           }
         },
         "required": [
-          "source_id",
-          "status",
+          "id",
+          "name",
           "engine",
-          "ready",
-          "message"
+          "host",
+          "port",
+          "database",
+          "username",
+          "tls_mode",
+          "enabled",
+          "description",
+          "has_password",
+          "server_version",
+          "status",
+          "last_checked_at",
+          "last_error",
+          "created_at",
+          "updated_at"
         ],
-        "title": "SourceHealth",
+        "title": "SourceOut",
         "type": "object"
       },
-      "SourceOut": {
-        "description": "What the API returns. Credentials are never included, only whether one is set.",
+      "SourceStatus": {
+        "enum": [
+          "healthy",
+          "degraded",
+          "failing"
+        ],
+        "title": "SourceStatus",
+        "type": "string"
+      },
+      "SourceUpdate": {
         "properties": {
           "database": {
             "maxLength": 120,
@@ -236,6 +636,7 @@
           },
           "description": {
             "default": "",
+            "maxLength": 500,
             "title": "Description",
             "type": "string"
           },
@@ -244,21 +645,13 @@
             "title": "Enabled",
             "type": "boolean"
           },
-          "has_password": {
-            "title": "Has Password",
-            "type": "boolean"
+          "engine": {
+            "$ref": "#/components/schemas/SourceEngine"
           },
           "host": {
             "maxLength": 255,
             "minLength": 1,
             "title": "Host",
-            "type": "string"
-          },
-          "id": {
-            "maxLength": 64,
-            "minLength": 1,
-            "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "title": "Id",
             "type": "string"
           },
           "name": {
@@ -267,47 +660,52 @@
             "title": "Name",
             "type": "string"
           },
+          "password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 1024,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password"
+          },
           "port": {
             "maximum": 65535.0,
             "minimum": 1.0,
             "title": "Port",
             "type": "integer"
           },
-          "ssl": {
-            "default": false,
-            "title": "Ssl",
-            "type": "boolean"
-          },
-          "type": {
-            "$ref": "#/components/schemas/SourceType"
+          "tls_mode": {
+            "default": "disable",
+            "enum": [
+              "disable",
+              "require",
+              "verify-full"
+            ],
+            "title": "Tls Mode",
+            "type": "string"
           },
           "username": {
+            "default": "",
             "maxLength": 120,
-            "minLength": 1,
             "title": "Username",
             "type": "string"
           }
         },
         "required": [
-          "id",
-          "name",
-          "type",
+          "engine",
           "host",
           "port",
           "database",
-          "username",
-          "has_password"
+          "name"
         ],
-        "title": "SourceOut",
+        "title": "SourceUpdate",
         "type": "object"
-      },
-      "SourceType": {
-        "enum": [
-          "postgres",
-          "mongodb"
-        ],
-        "title": "SourceType",
-        "type": "string"
       },
       "UserOut": {
         "properties": {
@@ -508,9 +906,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Getcollectorstatus",
-                  "type": "object"
+                  "$ref": "#/components/schemas/CollectorStatus"
                 }
               }
             },
@@ -531,9 +927,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
+                  "items": {
+                    "$ref": "#/components/schemas/SourceOut"
+                  },
                   "title": "Response Listsources",
-                  "type": "object"
+                  "type": "array"
                 }
               }
             },
@@ -546,6 +944,7 @@
         ]
       },
       "post": {
+        "description": "Save a source, but only after a successful connection test.",
         "operationId": "createSource",
         "requestBody": {
           "content": {
@@ -562,11 +961,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceOut"
+                  "$ref": "#/components/schemas/SourceDetail"
                 }
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "description": "The connection test failed; nothing was saved"
+          },
+          "409": {
+            "description": "Name already in use"
           },
           "422": {
             "content": {
@@ -587,12 +992,13 @@
     },
     "/api/sources/test": {
       "post": {
+        "description": "Try the connection and report capabilities without saving anything.\n\nA failed connection is a normal result (`ok: false` with an error code and message),\nnot an HTTP error.",
         "operationId": "testSourceConnection",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SourceConnectionRequest"
+                "$ref": "#/components/schemas/ConnectionTestRequest"
               }
             }
           },
@@ -603,9 +1009,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Testsourceconnection",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConnectionTestResult"
                 }
               }
             },
@@ -622,15 +1026,15 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Test Source Connection",
+        "summary": "Test Connection",
         "tags": [
           "sources"
         ]
       }
     },
-    "/api/sources/{source_id}/health": {
-      "get": {
-        "operationId": "getSourceHealth",
+    "/api/sources/{source_id}": {
+      "delete": {
+        "operationId": "deleteSource",
         "parameters": [
           {
             "in": "path",
@@ -638,7 +1042,40 @@
             "required": true,
             "schema": {
               "title": "Source Id",
-              "type": "string"
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Source",
+        "tags": [
+          "sources"
+        ]
+      },
+      "get": {
+        "operationId": "getSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "integer"
             }
           }
         ],
@@ -647,7 +1084,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SourceHealth"
+                  "$ref": "#/components/schemas/SourceDetail"
                 }
               }
             },
@@ -664,15 +1101,14 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Source Health",
+        "summary": "Get Source",
         "tags": [
           "sources"
         ]
-      }
-    },
-    "/api/sources/{source_id}/workload-preview": {
-      "get": {
-        "operationId": "getWorkloadPreview",
+      },
+      "put": {
+        "description": "Replace a source's settings. The new settings must pass a connection test.",
+        "operationId": "updateSource",
         "parameters": [
           {
             "in": "path",
@@ -680,7 +1116,66 @@
             "required": true,
             "schema": {
               "title": "Source Id",
-              "type": "string"
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The connection test failed; nothing was saved"
+          },
+          "409": {
+            "description": "Name already in use"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Source",
+        "tags": [
+          "sources"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/check": {
+      "post": {
+        "description": "Re-run the connection and capability checks with the stored settings.\n\nAlways returns the source; a failed check shows as `status: failing` with `last_error`.",
+        "operationId": "checkSource",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "integer"
             }
           }
         ],
@@ -689,9 +1184,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Getworkloadpreview",
-                  "type": "object"
+                  "$ref": "#/components/schemas/SourceDetail"
                 }
               }
             },
@@ -708,7 +1201,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Workload Preview",
+        "summary": "Check Source",
         "tags": [
           "sources"
         ]

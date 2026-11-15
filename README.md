@@ -24,12 +24,21 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
   without a session; the demo user gets 403 on every write. Both are tested against every endpoint in
   `openapi.json`, so new endpoints are covered automatically.
 - **API contract**: `openapi.json` is generated from code and committed; CI fails if it is stale.
+- **Data sources** for PostgreSQL and MongoDB:
+  - A real connection test before anything is saved, with TLS modes and a timeout
+    (`QP_SOURCE_CONNECT_TIMEOUT_SECONDS`, default 5). Failures come back with a code
+    (`auth_failed`, `timeout`, `unreachable`, ...) and a message saying what to fix.
+  - A **capability checklist** per source: what Query Pulse can monitor there, and the exact
+    grant or setting for anything missing (`pg_stat_statements`, `pg_monitor`, MongoDB
+    `clusterMonitor`, read access, profiler).
+  - Passwords encrypted with Fernet at rest (key rotation supported) and never returned or
+    logged.
+  - Read-only monitoring sessions. Query Pulse never changes a setting on a monitored database.
 - **Local stack** (`make demo`): app database, a demo PostgreSQL 16 with `pg_stat_statements` and
   a read-only `pg_monitor` role, and MongoDB 7 as a single-node replica set.
 
-**Placeholders until Week 2:** the `/api/sources` endpoints use an in-memory registry. Test
-connection only validates parameters, health reports `unknown`, and the workload preview returns
-canned data. Phase 2 replaces them with real adapters and stored, encrypted sources.
+Not yet: the collector (Phase 3) and everything built on it. `GET /api/collector/status`
+reports `not_running` until then.
 
 ## Quick start
 
@@ -68,9 +77,14 @@ uv run uvicorn query_pulse.main:create_app --factory --reload
 | Regenerate `openapi.json` | `uv run python scripts/export_openapi.py` | `make openapi` |
 | New migration | `uv run alembic revision --autogenerate -m "..."` | |
 
-Tests run against a fresh SQLite database per test, built by the real Alembic migrations, so
-they need no Docker. Integration tests against real PostgreSQL and MongoDB (testcontainers)
-arrive with Phase 2.
+Unit tests run against a fresh SQLite database per test, built by the real Alembic migrations,
+with a fake adapter for monitored databases. Integration tests in `tests/integration/` start real
+PostgreSQL 16 and MongoDB 7 containers (testcontainers) for the permission matrix and connection
+failures. They need Docker; without it they're skipped locally, and CI always runs them.
+
+**Windows:** psycopg's async mode can't use Windows' default event loop. The tests handle this
+themselves. To run the API outside Docker on Windows, use `--reload` (as above), which makes
+uvicorn use a compatible loop, or run it with `make demo`.
 
 ## Documentation
 
@@ -85,19 +99,21 @@ query_pulse/
   config/         settings validated from the environment
   db.py           engine, sessions, declarative base
   accounts/       users, password hashing, sessions, access guards, bootstrap command
-  sources/        data sources (Phase 1 placeholder)
+  sources/        data sources: models, schemas, service, API
+  adapters/       PostgreSQL and MongoDB adapters (connect, version, capabilities)
+  crypto.py       Fernet encryption for stored credentials
 migrations/       Alembic migrations
 demo/             demo database init scripts
 scripts/          export_openapi.py
 tests/
 ```
 
-Planned packages (`adapters/`, `collector/`, `workload/`, `findings/`, `ai/`) are added in the
+Planned packages (`collector/`, `workload/`, `findings/`, `ai/`) are added in the
 phase that needs them.
 
 ## Conventions
 
 - **Secrets** are `SecretStr` in settings and never returned by the API or logged. Source
-  credentials will be Fernet-encrypted at rest (Phase 2).
+  credentials are Fernet-encrypted at rest and decrypted only in `sources/service.py`.
 - **Write endpoints** must depend on `Writer` (`query_pulse/accounts/dependencies.py`).
 - **API changes**: run `make openapi` and commit `openapi.json` in the same commit.

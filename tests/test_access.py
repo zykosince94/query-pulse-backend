@@ -47,7 +47,7 @@ WRITES = [op for op in OPERATIONS if op[0] in WRITE_METHODS and op not in PUBLIC
 
 
 def _url(path: str) -> str:
-    return re.sub(r"\{[^}]+\}", "demo-postgres", path)
+    return re.sub(r"\{[^}]+\}", "1", path)
 
 
 def test_spec_has_write_endpoints_to_check() -> None:

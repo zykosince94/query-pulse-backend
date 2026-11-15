@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,10 @@ from query_pulse.accounts.bootstrap import bootstrap_users
 from query_pulse.config import Settings
 from query_pulse.db import create_engine, create_sessionmaker
 from query_pulse.main import create_app
+
+if sys.platform == "win32":
+    # psycopg's async mode can't use Windows' default ProactorEventLoop.
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 ROOT = Path(__file__).resolve().parent.parent
 ADMIN_PASSWORD = "admin-password-for-tests"
