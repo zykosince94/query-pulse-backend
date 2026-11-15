@@ -133,3 +133,10 @@ Planned packages (`findings/`, `ai/`) are added in the phase that needs them.
   credentials are Fernet-encrypted at rest and decrypted only in `sources/service.py`.
 - **Write endpoints** must depend on `Writer` (`query_pulse/accounts/dependencies.py`).
 - **API changes**: run `make openapi` and commit `openapi.json` in the same commit.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). Copyright 2026 Rishabh Pandey.
+
+If you redistribute this project or a derivative of it, keep the [NOTICE](NOTICE) file with it,
+as section 4(d) of the license requires.

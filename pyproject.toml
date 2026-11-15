@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Query Pulse backend: database performance intelligence for PostgreSQL and MongoDB."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",

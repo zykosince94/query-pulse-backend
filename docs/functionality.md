@@ -111,8 +111,7 @@ works without CORS.
 ### 3.6 Appearance
 
 - Light and dark themes, following the operating system's setting at page load.
-- All colours come from shared design tokens (`src/styles/tokens.css`), which API Pulse will
-  reuse.
+- All colours come from design tokens (`src/styles/tokens.css`).
 
 ### 3.7 Data sources
 
