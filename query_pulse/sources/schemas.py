@@ -113,6 +113,10 @@ class SourceOut(BaseModel):
     last_error: str | None
     created_at: datetime
     updated_at: datetime
+    # From the collector (Phase 3): when it last collected successfully, and anything that
+    # makes the results incomplete (e.g. pg_stat_statements evicting statements).
+    last_collected_at: datetime | None = None
+    warnings: list[str] = []
 
 
 class SourceDetail(SourceOut):
@@ -120,6 +124,7 @@ class SourceDetail(SourceOut):
 
 
 class CollectorStatus(BaseModel):
-    status: Literal["not_running"]
+    status: Literal["running", "not_running"]
+    last_beat_at: datetime | None
     source_count: int
     message: str

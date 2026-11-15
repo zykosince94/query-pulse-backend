@@ -50,8 +50,9 @@ select = ["E", "F", "I", "B", "UP", "SIM", "S", "ASYNC"]
 ignore = ["B008"]  # FastAPI's Depends() in defaults is idiomatic
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106"]
+"tests/**" = ["S101", "S105", "S106", "S311"]
 "migrations/**" = ["E501"]
+"query_pulse/demo/**" = ["S311", "E501"]  # demo data: random isn't for security; SQL reads better unwrapped
 
 [tool.mypy]
 python_version = "3.12"

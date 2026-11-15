@@ -8,7 +8,12 @@ from __future__ import annotations
 
 import logging
 
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from query_pulse.adapters import AdapterError, ConnectionParams, ErrorCode, ProbeResult, adapter_for
+from query_pulse.collector.models import CollectorState
+from query_pulse.collector.warnings import eviction_warning
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import utcnow
 from query_pulse.sources.models import DataSource, SourceCapability, SourceStatus
@@ -18,6 +23,7 @@ from query_pulse.sources.schemas import (
     ConnectionFields,
     ConnectionTestResult,
     SourceDetail,
+    SourceFields,
     SourceOut,
 )
 
@@ -49,6 +55,31 @@ RETARGET_MESSAGE = (
     "Enter the password again: the engine, host, port or username changed, and a saved "
     "password is only ever sent to the server it was saved for."
 )
+
+
+# What the collector's baseline snapshot belongs to. If any of these change, the stored
+# snapshot describes a different database (or different visibility of it), and comparing
+# against it would count every statement's lifetime totals as one interval.
+BASELINE_FIELDS = (*TARGET_FIELDS, "database")
+
+
+def baseline_invalidated(source: DataSource, payload: SourceFields) -> bool:
+    """Whether an update makes the collector's stored baseline meaningless.
+
+    Re-enabling counts too: the activity of the whole disabled period would otherwise land in
+    a single interval.
+    """
+    moved = any(getattr(source, f) != getattr(payload, f) for f in BASELINE_FIELDS)
+    return moved or (not source.enabled and payload.enabled)
+
+
+async def reset_baseline(session: AsyncSession, source_id: int) -> None:
+    """Forget the collector's last snapshot; its next cycle takes a fresh baseline."""
+    await session.execute(
+        update(CollectorState)
+        .where(CollectorState.source_id == source_id)
+        .values(snapshot=None, snapshot_at=None, stats_reset=None, dealloc=None)
+    )
 
 
 def target_changed(source: DataSource, fields: ConnectionFields) -> bool:
@@ -179,6 +210,8 @@ def to_out(source: DataSource) -> SourceOut:
         last_error=source.last_error,
         created_at=source.created_at,
         updated_at=source.updated_at,
+        last_collected_at=state.last_success_at if (state := source.collector_state) else None,
+        warnings=[w] if (w := eviction_warning(source.collector_state)) else [],
     )
 
 

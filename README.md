@@ -37,8 +37,17 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
 - **Local stack** (`make demo`): app database, a demo PostgreSQL 16 with `pg_stat_statements` and
   a read-only `pg_monitor` role, and MongoDB 7 as a single-node replica set.
 
-Not yet: the collector (Phase 3) and everything built on it. `GET /api/collector/status`
-reports `not_running` until then.
+- **The collector** (`python -m query_pulse.collector`): polls every enabled PostgreSQL source,
+  turns `pg_stat_statements`' cumulative counters into per-interval observations, and handles
+  resets, evictions and restarts without ever storing a negative or inflated number. It also
+  samples table and index statistics, re-checks capabilities, backs off when a database is down
+  (and recovers on its own), and deletes data older than 14 days.
+- **Workload read API**: per-minute trends per source and a health summary for the home page.
+- **Demo data**: a seeded e-commerce database with four planted problems (P1–P4) and a workload
+  that runs them next to healthy controls, so `make demo` has real traffic to measure.
+
+Not yet: the workload explorer and query plans (Phase 4), findings (Phase 5), MongoDB
+collection (Phase 6).
 
 ## Quick start
 
@@ -55,6 +64,11 @@ curl localhost:8000/ready
 | App database  | localhost:5432                                   | `querypulse` / `querypulse` |
 | Demo Postgres | localhost:5433, database `shop`                  | monitor: `querypulse_monitor` / `monitor` |
 | Demo MongoDB  | `mongodb://localhost:27017/?directConnection=true` | none |
+
+`make demo` also starts the **collector** (every 15 s in the demo) and the **demo workload**.
+Add the demo database as a source in the UI (host `demo-postgres`, port 5432, database `shop`,
+user `querypulse_monitor`, password `monitor`) and the home page shows its activity within a
+minute.
 
 ## Development
 
@@ -100,6 +114,9 @@ query_pulse/
   db.py           engine, sessions, declarative base
   accounts/       users, password hashing, sessions, access guards, bootstrap command
   sources/        data sources: models, schemas, service, API
+  collector/      delta engine, collection cycle, supervisor, `python -m query_pulse.collector`
+  workload/       fingerprints, observations, table stats; trend and health API
+  demo/           demo seed and workload (not part of the product)
   adapters/       PostgreSQL and MongoDB adapters (connect, version, capabilities)
   crypto.py       Fernet encryption for stored credentials
 migrations/       Alembic migrations
@@ -108,8 +125,7 @@ scripts/          export_openapi.py
 tests/
 ```
 
-Planned packages (`collector/`, `workload/`, `findings/`, `ai/`) are added in the
-phase that needs them.
+Planned packages (`findings/`, `ai/`) are added in the phase that needs them.
 
 ## Conventions
 

@@ -45,6 +45,16 @@ jobs:
           docker compose exec -T demo-postgres \
             psql "postgresql://querypulse_monitor:monitor@localhost/shop" \
             -tAc "SELECT count(*) >= 0 FROM pg_stat_statements" | grep -q t
+      - name: Demo workload is running and seeded
+        run: |
+          docker compose exec -T demo-postgres \
+            psql -U postgres -d shop -tAc "SELECT count(*) > 0 FROM orders" | grep -q t
+      - name: Collector reports a heartbeat
+        run: |
+          curl -fsS -c jar -X POST http://localhost:8000/api/auth/login \
+            -H 'content-type: application/json' \
+            -d '{"username":"admin","password":"admin-demo-password"}' >/dev/null
+          curl -fsS -b jar http://localhost:8000/api/collector/status | grep -q '"status":"running"'
       - name: MongoDB replica set has a primary
         run: |
           docker compose exec -T mongo mongosh --quiet \

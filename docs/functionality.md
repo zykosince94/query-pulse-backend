@@ -4,8 +4,8 @@ What Query Pulse does today, across the backend (`query-pulse-backend`) and the 
 (`query-pulse-frontend`). This page describes **current behaviour only**. Planned work is listed
 at the end and marked as such.
 
-*As of 15 November 2026: Phase 1 ("Foundation") and Phase 2 ("Data sources", release target
-v0.2.0).*
+*As of 16 November 2026: Phase 1 ("Foundation"), Phase 2 ("Data sources") and Phase 3 ("PostgreSQL
+collector", release target v0.3.0).*
 
 ---
 
@@ -18,11 +18,11 @@ v0.2.0).*
 | Access control | 401 without a session, 403 for the demo user on writes | — |
 | App shell | Navigation, current user, read-only badge, not-found and error pages | — |
 | Data sources | Add, edit, re-check and delete PostgreSQL and MongoDB sources; real connection test before saving; capability checklist with exact fixes; encrypted credentials | — |
-| Workload | — | Placeholder page (Phase 4) |
-| Collector | — | Status endpoint reports `not_running` (Phase 3) |
+| Workload | Health strip on the home page: each source's status, last-hour calls and execution time, and a calls-per-minute sparkline | Ranked explorer and plans (Phase 4) |
+| Collector | Polls every enabled PostgreSQL source, stores per-interval deltas from `pg_stat_statements`, handles resets, evictions and restarts, samples table/index statistics, re-checks capabilities, deletes old data | MongoDB collection (Phase 6) |
 | Findings, Settings | — | Placeholder pages |
 | Ops | `/health`, `/ready`, OpenAPI docs | — |
-| Local stack | App database, demo PostgreSQL 16 with `pg_stat_statements`, MongoDB 7 replica set | No demo data or workload yet |
+| Local stack | App database, demo PostgreSQL 16 with `pg_stat_statements` and a seeded e-commerce database with planted problems P1–P4, MongoDB 7 replica set, the collector, and a demo workload | — |
 
 Query Pulse never writes to the databases it monitors. It connects only to test a connection and
 check capabilities, with read-only sessions, and it never changes a setting (for example, it
@@ -33,7 +33,7 @@ reports that MongoDB profiling is off but never turns it on).
 ## 2. Users and roles
 
 There is no sign-up. Users are created from environment variables by the bootstrap command
-(§6.2), which runs automatically when the API container starts.
+(§7.2), which runs automatically when the API container starts.
 
 | Role | Created from | Can read | Can write | Signs in with |
 |---|---|---|---|---|
@@ -61,7 +61,7 @@ works without CORS.
 | Path | Access | Shows |
 |---|---|---|
 | `/login` | Public | Sign-in form; "Try the demo" when enabled |
-| `/` | Signed in | Workload (placeholder, Phase 4) |
+| `/` | Signed in | Workload: the source health strip, plus the explorer placeholder (Phase 4) |
 | `/sources` | Signed in | Data sources list |
 | `/sources/new` | Signed in (admin) | Add a source; the demo user sees a read-only notice |
 | `/sources/:id` | Signed in | Source detail and capability checklist |
@@ -157,6 +157,33 @@ works without CORS.
 - A missing source shows "This data source doesn't exist."; a non-numeric id shows the not-found
   page.
 
+### 3.8 Workload home and collection
+
+**Home (`/`): source health strip**
+- One card per source: name (links to the source), engine and status badges, an **Incomplete**
+  badge if pg_stat_statements has been evicting statements (hover for the explanation), the last
+  hour's **calls** and **execution time**, a **calls-per-minute sparkline** with a crosshair
+  tooltip, and when it was last collected.
+- MongoDB sources say "MongoDB workload collection arrives in Phase 6"; disabled sources say
+  collection is off.
+- "Collector: running / not running" next to the heading. If the collector isn't running, a
+  notice says the charts won't update.
+- Data refreshes every 30 seconds. The current, unfinished minute is left out of every trend, so
+  charts don't show a false drop at the right edge.
+
+**Source detail: Collection panel**
+- "Last collected …" (or "Waiting for the first collection": the collector takes a baseline
+  first and records activity from the next cycle).
+- Any eviction warning, with what to do (raise `pg_stat_statements.max`).
+- Two charts over the last 60 minutes, one measure each: **Calls per minute** and **Execution
+  time per minute**, each with its hour total, a crosshair tooltip and a **Show data** table of
+  every minute's value.
+
+**Sources list:** the "Last collected" column (shown on wide screens) and the Incomplete badge.
+
+Charts are drawn with ECharts, loaded only when a chart is first shown. Their colour is the
+`--chart-1` token, checked against the card colour in light and dark mode.
+
 ---
 
 ## 4. Backend: HTTP API
@@ -218,7 +245,7 @@ connection test.
 | `PUT /api/sources/{source_id}` | Admin | `200` source with checklist. If only `name`, `description` or `enabled` changed (and no password is sent), it saves without a connection test. | `400` connection failed or password must be re-entered (nothing changed), `401`, `403`, `404`, `409`, `422` |
 | `POST /api/sources/{source_id}/check` | Admin | `200` source, re-checked with its stored settings | `401`, `403`, `404` |
 | `DELETE /api/sources/{source_id}` | Admin | `204` | `401`, `403`, `404` |
-| `GET /api/collector/status` | Session | `200 {"status": "not_running", "source_count": 2, "message": "…"}` (placeholder until Phase 3) | `401` |
+| `GET /api/collector/status` | Session | See §4.4 | `401` |
 
 **Fields** (create and update):
 
@@ -245,6 +272,8 @@ connection test.
 | `status` | `healthy`: connected and every capability available. `degraded`: connected, some capabilities missing. `failing`: the last check couldn't connect. |
 | `last_checked_at`, `last_error` | When the last check ran; the error message if it failed |
 | `created_at`, `updated_at` | Timestamps |
+| `last_collected_at` | When the collector last collected successfully (null before the first success, and for MongoDB) |
+| `warnings` | Anything that makes results incomplete, e.g. pg_stat_statements evicting statements in the last hour |
 | `capabilities` | Detail responses only: the checklist below |
 
 **Connection test.** Send the connection fields (`engine`, `host`, `port`, `database`,
@@ -290,6 +319,20 @@ points it, so different error codes reveal whether a host and port answer. That'
 feature and limited to the admin. If Query Pulse is ever hosted for others, add an allowlist of
 reachable networks.
 
+### 4.4 Workload and collector
+
+| Method and path | Access | Success | Errors |
+|---|---|---|---|
+| `GET /api/workload/health?minutes=60` | Session | `200` one entry per source: `source` (as above), `calls`, `total_exec_time_ms`, `points` | `401`, `422` |
+| `GET /api/sources/{source_id}/trend?minutes=60` | Session | `200 {"source_id", "minutes", "bucket_seconds": 60, "points": [...]}` | `401`, `404`, `422` |
+| `GET /api/collector/status` | Session | `200 {"status": "running" \| "not_running", "last_beat_at", "source_count", "message"}` | `401` |
+
+- `minutes` is 5–1440 (default 60). A point is `{"start", "calls", "total_exec_time_ms"}` for one
+  minute; every minute in the window has a point (zeros included), and the current unfinished
+  minute is excluded.
+- The collector status is `running` when its heartbeat is less than three refresh periods old
+  (90 seconds by default).
+
 ---
 
 ## 5. Sessions and security behaviour
@@ -311,9 +354,72 @@ reachable networks.
 
 ---
 
-## 6. Configuration and operation
+## 6. The collector
 
-### 6.1 Environment variables (backend)
+`python -m query_pulse.collector` (the `collector` service in compose). One instance only.
+
+**What it does for each enabled PostgreSQL source**, every `QP_COLLECTOR_INTERVAL_SECONDS`
+(60 by default, 15 in the local demo, 2 in tests):
+
+1. Connects read-only (same connection rules as the connection test) and reads
+   `pg_stat_statements` for the source's database, plus `pg_stat_statements_info` (`stats_reset`,
+   `dealloc`). Its own queries carry a `/* query-pulse */` comment and are excluded.
+2. Compares with the previous snapshot and stores the **difference per statement** as one
+   observation per active statement: calls, total and mean execution time, rows, shared buffer
+   hits and reads. Statements are identified by PostgreSQL's own
+   `(dbid, userid, queryid, toplevel)`.
+3. Saves the new snapshot as the baseline for the next cycle, in the app database, so a restart
+   continues correctly.
+
+**Rules that keep the numbers honest**
+
+| Situation | What happens |
+|---|---|
+| First cycle for a source | Baseline only; nothing is recorded yet |
+| `pg_stat_statements_reset()` (detected by `stats_reset` changing, or any counter going down) | That interval is discarded, so no negative or inflated numbers; the current snapshot becomes the new baseline |
+| A statement that wasn't in the previous snapshot | All its counters belong to this interval |
+| Evictions (`dealloc` rose) | The source shows a warning for an hour and becomes **degraded**: some activity wasn't recorded; raise `pg_stat_statements.max` |
+| Collector restart | Continues from the stored baseline |
+| A source's database, host, port, engine or username changes, or it's re-enabled | The baseline is cleared, so the next cycle starts fresh instead of counting a lifetime as one interval |
+
+**Other jobs:** table and index statistics (`pg_stat_user_tables`, `pg_stat_user_indexes`:
+scans, live/dead rows, sizes) every `QP_COLLECTOR_RELATION_STATS_SECONDS` (300); capability
+re-checks every `QP_COLLECTOR_CAPABILITY_CHECK_SECONDS` (900), so enabling an extension later
+turns its feature on; and once a day it deletes observations and table samples older than
+`QP_RETENTION_DAYS` (14).
+
+**Failures:** each cycle has a time limit (`QP_COLLECTOR_CYCLE_TIMEOUT_SECONDS`, 30). A failed
+cycle marks the source **failing** with the error, and the next attempt waits longer each time
+(interval, 2×, 4×, … up to `QP_COLLECTOR_MAX_BACKOFF_SECONDS`, 300). The first success marks it
+healthy again: recovery is automatic. Waits are spread by ±10%, and sources start at random
+offsets, so they don't all poll at once. Added, removed and disabled sources are picked up every
+`QP_COLLECTOR_REFRESH_SECONDS` (30).
+
+**Source status from collection:** `healthy` (collected, all capabilities available, no recent
+evictions), `degraded` (collected, but a capability is missing or statements were evicted),
+`failing` (the last cycle failed; `last_error` says why).
+
+**Demo data** (`python -m query_pulse.demo.seed`, then `python -m query_pulse.demo.workload`; the
+`demo-workload` compose service runs both): an e-commerce schema in the demo database (customers,
+products, orders; sizes from `QP_DEMO_CUSTOMERS` / `_PRODUCTS` / `_ORDERS`, default 20,000 / 5,000
+/ 200,000) with four planted problems, and a workload at `QP_DEMO_RATE` queries per second (20)
+running them next to healthy controls:
+
+| ID | Planted problem | Healthy control |
+|---|---|---|
+| P1 | Orders looked up by `customer_id`, which has no index (sequential scan) | Customer by primary key |
+| P2 | Latest 20 orders sorted by `created_at`, which has no index | Order by primary key |
+| P3 | Product search with `LIKE '%term%'` (a leading wildcard can't use a b-tree) | Products by indexed category |
+| P4 | `idx_orders_legacy_lookup`: a large index nothing uses | Orders by primary-key range |
+
+The seed only fills empty tables, so it's safe to rerun. On the running demo, P1 ranks first by
+total time and P2 second.
+
+---
+
+## 7. Configuration and operation
+
+### 7.1 Environment variables (backend)
 
 All settings are validated when the API starts. A missing or invalid value stops it with a clear
 error.
@@ -327,6 +433,13 @@ error.
 | `QP_SESSION_MAX_AGE_SECONDS` | no | `43200` (12 h) | Session lifetime |
 | `QP_FERNET_KEY` | **yes** | — | Encryption key(s) for stored source credentials. One Fernet key, or several comma-separated for rotation (the first encrypts, all decrypt). Losing it makes stored passwords unreadable. |
 | `QP_SOURCE_CONNECT_TIMEOUT_SECONDS` | no | `5` | How long a connection test or check waits for a monitored database (up to 60) |
+| `QP_COLLECTOR_INTERVAL_SECONDS` | no | `60` | Collection interval per source (15 in the compose demo) |
+| `QP_COLLECTOR_CYCLE_TIMEOUT_SECONDS` | no | `30` | Time limit for one collection cycle |
+| `QP_COLLECTOR_MAX_BACKOFF_SECONDS` | no | `300` | Longest wait between attempts after failures |
+| `QP_COLLECTOR_RELATION_STATS_SECONDS` | no | `300` | How often table and index statistics are sampled |
+| `QP_COLLECTOR_CAPABILITY_CHECK_SECONDS` | no | `900` | How often capabilities are re-checked |
+| `QP_COLLECTOR_REFRESH_SECONDS` | no | `30` | How often the collector picks up added or removed sources (and writes its heartbeat) |
+| `QP_RETENTION_DAYS` | no | `14` | Observations and table samples older than this are deleted daily |
 | `QP_ADMIN_USERNAME` | no | `admin` | Admin username |
 | `QP_ADMIN_PASSWORD` | **yes** | — | Admin password; at least 8 characters |
 | `QP_DEMO_ENABLED` | no | `false` | Creates the demo user and enables "Try the demo" |
@@ -335,7 +448,7 @@ error.
 
 Values can come from the environment or a local `.env` file (see `.env.example`).
 
-### 6.2 Commands (backend)
+### 7.2 Commands (backend)
 
 | Command | Does |
 |---|---|
@@ -343,16 +456,20 @@ Values can come from the environment or a local `.env` file (see `.env.example`)
 | `python -m query_pulse.accounts.bootstrap` | Makes the accounts match the environment and prints `created`, `updated`, `unchanged` or `removed` for each. Safe to run repeatedly. |
 | `uvicorn query_pulse.main:create_app --factory` | Runs the API |
 | `python scripts/export_openapi.py [--check]` | Writes `openapi.json`, or fails if it is out of date |
+| `python -m query_pulse.collector` | Runs the collector (one instance only) |
+| `python -m query_pulse.demo.seed` / `.workload` | Seeds the demo database / runs the demo workload |
 
 The API container runs the first three in order on every start.
 
-### 6.3 Local stack (`make demo` in the backend repo)
+### 7.3 Local stack (`make demo` in the backend repo)
 
 | Service | Host port | Purpose | Local demo credentials |
 |---|---|---|---|
 | `app` | 8000 | The API | `admin` / `admin-demo-password`, `demo` / `demo-password` |
 | `app-db` | 5432 | PostgreSQL 16, the app's own database | `querypulse` / `querypulse` |
 | `demo-postgres` | 5433 | PostgreSQL 16 to be monitored, with `pg_stat_statements` and the read-only role `querypulse_monitor` (`pg_monitor`) | `postgres` / `postgres`; monitor: `querypulse_monitor` / `monitor` |
+| `collector` | — | The collector, polling every 15 s in the demo; healthy while its heartbeat is fresh | — |
+| `demo-workload` | — | Seeds the demo database once, then runs the P1–P4 workload at 20 queries/s | `shop_app` / `shop-app` (demo role) |
 | `mongo` | 27017 | MongoDB 7, single-node replica set `rs0`, to be monitored. From the host use `mongodb://localhost:27017/?directConnection=true`. | none |
 
 All ports listen on `127.0.0.1` only, so the databases, with their default credentials and
@@ -360,7 +477,7 @@ MongoDB without auth, can't be reached from other machines on your network. The 
 after all three databases report healthy. Data persists in named Docker volumes;
 `docker compose down -v` deletes it.
 
-### 6.4 Frontend configuration
+### 7.4 Frontend configuration
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -370,7 +487,7 @@ after all three databases report healthy. Data persists in named Docker volumes;
 
 ---
 
-## 7. The API contract between the repos
+## 8. The API contract between the repos
 
 1. The backend generates `openapi.json` from its code and commits it. Its CI fails if the file is
    out of date.
@@ -384,11 +501,11 @@ Push backend API changes first, then regenerate and push the frontend.
 
 ---
 
-## 8. Verification
+## 9. Verification
 
 | Acceptance criterion | Status | Proven by |
 |---|---|---|
-| QP-AC-01: `make demo` starts all services healthy | Partly: all services start healthy (verified locally); the demo workload doesn't exist yet | Backend CI `stack` job |
+| QP-AC-01: `make demo` starts all services healthy and the demo workload is running | Done | Backend CI `stack` job (services healthy, demo data seeded, collector heartbeat); verified locally |
 | QP-AC-02: admin signs in and out; protected endpoints return 401 without a session | Done | Backend `test_auth.py` and `test_access.py` (every endpoint from the spec); frontend Playwright `sign-in.spec.ts` |
 | QP-AC-03: demo user gets 403 on every write endpoint in `openapi.json` | Done | Backend `test_access.py`, generated from the spec |
 | QP-AC-04: CI fails when `openapi.json` or the frontend types are stale | Done | Backend `export_openapi.py --check`; frontend `gen:api:check` |
@@ -397,18 +514,22 @@ Push backend API changes first, then regenerate and push the frontend.
 | QP-AC-07: an unreachable host or wrong password fails within the timeout with a clear error, and nothing is saved | Done | Integration tests (wrong password, unknown database, closed port, unresolvable host, timed); `test_sources.py` (nothing saved); Playwright wrong-password journey |
 | QP-AC-08: a marker password never appears in any response body or log line | Done | `test_sources.py::test_marker_password_never_leaks` (every source endpoint, success and failure, plus all log records) |
 
-Test counts: 101 backend unit and 17 backend integration (pytest), 43 frontend (Vitest), 6
+| QP-AC-09: a query run exactly 500 times between cycles shows Δcalls = 500 and a mean matching a direct `pg_stat_statements` diff within 1% | Done | `tests/integration/test_collector.py::test_500_calls_between_cycles_cross_checked` |
+| QP-AC-10: after `pg_stat_statements_reset()`, no negative or inflated delta is stored and collection continues | Done | `test_reset_discards_the_interval_and_collection_continues`; delta-engine unit tests |
+| QP-AC-11: restarting the collector keeps the baseline | Done | `test_restarted_collector_continues_from_the_persisted_baseline`; serialisation unit test |
+| QP-AC-12: rising `dealloc` produces an eviction warning on the source | Done | Unit tests + `test_rising_dealloc_warns_on_the_source` (`pg_stat_statements.max=100`) |
+| QP-AC-13: a database going down marks the source failing; it recovers on its own | Done | `test_outage_marks_failing_then_recovers` (pauses the container); backoff and supervisor unit tests |
+
+Test counts: 140 backend unit and 23 backend integration (pytest), 52 frontend (Vitest), 6
 end-to-end (Playwright).
 
 ---
 
-## 9. Not built yet
+## 10. Not built yet
 
 | Planned | Phase | Release |
 |---|---|---|
 | CSRF protection beyond SameSite, login rate limit, JSON logs with request IDs | 1 | v0.1.0 |
-| Demo seed data and the planted-problem workload (P1–P4) | 1 | v0.1.0 |
-| PostgreSQL collector with per-interval deltas | 3 | v0.3.0 |
 | Workload explorer and query plans | 4 | v0.4.0 |
 | Rule-based findings for P1–P4 (first showable release) | 5 | v0.5.0 |
 | MongoDB collection and findings | 6 | v0.6.0 |

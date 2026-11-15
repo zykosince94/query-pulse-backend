@@ -63,6 +63,18 @@
       },
       "CollectorStatus": {
         "properties": {
+          "last_beat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Beat At"
+          },
           "message": {
             "title": "Message",
             "type": "string"
@@ -72,13 +84,17 @@
             "type": "integer"
           },
           "status": {
-            "const": "not_running",
+            "enum": [
+              "running",
+              "not_running"
+            ],
             "title": "Status",
             "type": "string"
           }
         },
         "required": [
           "status",
+          "last_beat_at",
           "source_count",
           "message"
         ],
@@ -414,6 +430,18 @@
             ],
             "title": "Last Checked At"
           },
+          "last_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Collected At"
+          },
           "last_error": {
             "anyOf": [
               {
@@ -464,6 +492,14 @@
           "username": {
             "title": "Username",
             "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -496,6 +532,37 @@
         ],
         "title": "SourceEngine",
         "type": "string"
+      },
+      "SourceHealth": {
+        "description": "One card of the health strip: the source, its totals and its trend.",
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceOut"
+          },
+          "total_exec_time_ms": {
+            "title": "Total Exec Time Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "source",
+          "calls",
+          "total_exec_time_ms",
+          "points"
+        ],
+        "title": "SourceHealth",
+        "type": "object"
       },
       "SourceOut": {
         "properties": {
@@ -543,6 +610,18 @@
             ],
             "title": "Last Checked At"
           },
+          "last_collected_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Collected At"
+          },
           "last_error": {
             "anyOf": [
               {
@@ -593,6 +672,14 @@
           "username": {
             "title": "Username",
             "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -625,6 +712,37 @@
         ],
         "title": "SourceStatus",
         "type": "string"
+      },
+      "SourceTrend": {
+        "properties": {
+          "bucket_seconds": {
+            "title": "Bucket Seconds",
+            "type": "integer"
+          },
+          "minutes": {
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TrendPoint"
+            },
+            "title": "Points",
+            "type": "array"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "minutes",
+          "bucket_seconds",
+          "points"
+        ],
+        "title": "SourceTrend",
+        "type": "object"
       },
       "SourceUpdate": {
         "properties": {
@@ -705,6 +823,31 @@
           "name"
         ],
         "title": "SourceUpdate",
+        "type": "object"
+      },
+      "TrendPoint": {
+        "description": "Activity in one minute: total calls and total execution time across all statements.",
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "total_exec_time_ms": {
+            "title": "Total Exec Time Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "calls",
+          "total_exec_time_ms"
+        ],
+        "title": "TrendPoint",
         "type": "object"
       },
       "UserOut": {
@@ -900,6 +1043,7 @@
     },
     "/api/collector/status": {
       "get": {
+        "description": "Whether the collector process is alive, from the heartbeat it writes.",
         "operationId": "getCollectorStatus",
         "responses": {
           "200": {
@@ -915,7 +1059,7 @@
         },
         "summary": "Collector Status",
         "tags": [
-          "sources"
+          "workload"
         ]
       }
     },
@@ -1207,6 +1351,115 @@
         "summary": "Check Source",
         "tags": [
           "sources"
+        ]
+      }
+    },
+    "/api/sources/{source_id}/trend": {
+      "get": {
+        "description": "Calls and execution time per minute for one source.",
+        "operationId": "getSourceTrend",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Window length in minutes",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "description": "Window length in minutes",
+              "maximum": 1440,
+              "minimum": 5,
+              "title": "Minutes",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceTrend"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Source Trend",
+        "tags": [
+          "workload"
+        ]
+      }
+    },
+    "/api/workload/health": {
+      "get": {
+        "description": "The health strip: every source with its status and recent activity.",
+        "operationId": "getWorkloadHealth",
+        "parameters": [
+          {
+            "description": "Window length in minutes",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "description": "Window length in minutes",
+              "maximum": 1440,
+              "minimum": 5,
+              "title": "Minutes",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceHealth"
+                  },
+                  "title": "Response Getworkloadhealth",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workload Health",
+        "tags": [
+          "workload"
         ]
       }
     },

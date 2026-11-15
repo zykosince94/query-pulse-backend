@@ -11,7 +11,6 @@ from query_pulse.crypto import CredentialCipher
 from query_pulse.sources import service
 from query_pulse.sources.models import DataSource
 from query_pulse.sources.schemas import (
-    CollectorStatus,
     ConnectionFields,
     ConnectionTestRequest,
     ConnectionTestResult,
@@ -167,11 +166,14 @@ async def update_source(
     """
     source = await _get_or_404(session, source_id)
     await _ensure_unique_name(session, payload.name, exclude_id=source.id)
+    rebaseline = service.baseline_invalidated(source, payload)
 
     if payload.password is None and not service.connection_changed(source, payload):
         source.name = payload.name
         source.enabled = payload.enabled
         source.description = payload.description
+        if rebaseline:
+            await service.reset_baseline(session, source.id)
         await _commit_or_409(session, payload.name)
         await session.refresh(source)
         return service.to_detail(source)
@@ -201,6 +203,8 @@ async def update_source(
     if payload.password is not None:
         source.password_encrypted = cipher.encrypt(password) if password else None
     service.record_success(source, result)
+    if rebaseline:
+        await service.reset_baseline(session, source.id)
     await _commit_or_409(session, payload.name)
     await session.refresh(source)
     return service.to_detail(source)
@@ -245,13 +249,3 @@ async def delete_source(source_id: int, session: SessionDep, _: Writer) -> Respo
     await session.delete(source)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-
-@router.get("/collector/status", response_model=CollectorStatus, operation_id="getCollectorStatus")
-async def collector_status(session: SessionDep) -> CollectorStatus:
-    count = await session.scalar(select(func.count()).select_from(DataSource)) or 0
-    return CollectorStatus(
-        status="not_running",
-        source_count=count,
-        message="The collector process arrives in Phase 3.",
-    )

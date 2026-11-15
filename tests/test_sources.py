@@ -308,16 +308,6 @@ def test_delete_removes_the_source(admin: TestClient) -> None:
     assert admin.get("/api/sources").json() == []
 
 
-def test_collector_status_counts_sources(admin: TestClient) -> None:
-    create(admin)
-    status = admin.get("/api/collector/status").json()
-    assert status == {
-        "status": "not_running",
-        "source_count": 1,
-        "message": "The collector process arrives in Phase 3.",
-    }
-
-
 # --- QP-AC-08: a marker password never appears in a response body or a log line -----------------
 
 
@@ -470,3 +460,67 @@ def test_database_rejects_a_case_variant_name_even_past_the_app_check(
     response = admin.post("/api/sources", json=source(name="orders db"))
     assert response.status_code == 409
     assert [s["name"] for s in admin.get("/api/sources").json()] == ["Orders DB"]
+
+
+# --- Phase 3: the collector's baseline is reset when it stops describing the source ----------
+
+
+def _seed_baseline(database_url: str, source_id: int) -> None:
+    import asyncio
+
+    from query_pulse.collector.models import CollectorState
+    from query_pulse.db import create_engine as create_async
+    from query_pulse.db import create_sessionmaker
+
+    async def _run() -> None:
+        engine = create_async(database_url)
+        async with create_sessionmaker(engine)() as session:
+            session.add(
+                CollectorState(
+                    source_id=source_id,
+                    consecutive_failures=0,
+                    evicted_statements=0,
+                    snapshot={"taken_at": "2026-11-16T12:00:00+00:00", "statements": {}},
+                )
+            )
+            await session.commit()
+        await engine.dispose()
+
+    asyncio.run(_run())
+
+
+def _baseline(database_url: str, source_id: int) -> object:
+    engine = create_engine(database_url.replace("+aiosqlite", ""))
+    with engine.connect() as conn:
+        value = conn.execute(
+            text("SELECT snapshot FROM collector_states WHERE source_id = :id"), {"id": source_id}
+        ).scalar_one()
+    engine.dispose()
+    return value
+
+
+@pytest.mark.parametrize(
+    ("change", "reset"),
+    [
+        ({"database": "sales"}, True),  # a different database: old counters mean nothing
+        ({"host": "replica.example", "password": "pw"}, True),  # a different server
+        ({"name": "Renamed"}, False),  # cosmetic
+        ({"tls_mode": "verify-full"}, False),  # same server, same data
+    ],
+)
+def test_baseline_reset_when_the_source_moves(
+    admin: TestClient, database_url: str, change: dict[str, Any], reset: bool
+) -> None:
+    created = create(admin)
+    _seed_baseline(database_url, created["id"])
+    assert admin.put(f"/api/sources/{created['id']}", json=update_body(**change)).status_code == 200
+    assert (_baseline(database_url, created["id"]) is None) is reset
+
+
+def test_baseline_reset_when_a_source_is_re_enabled(admin: TestClient, database_url: str) -> None:
+    created = create(admin)
+    url = f"/api/sources/{created['id']}"
+    admin.put(url, json=update_body(enabled=False))
+    _seed_baseline(database_url, created["id"])
+    assert admin.put(url, json=update_body(enabled=True)).status_code == 200
+    assert _baseline(database_url, created["id"]) is None

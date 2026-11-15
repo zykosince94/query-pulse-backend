@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # Monitored-database connections (test connection, capability checks).
     source_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
 
+    # The collector (`python -m query_pulse.collector`). Tests use a 2-second interval.
+    collector_interval_seconds: float = Field(default=60.0, gt=0)
+    collector_cycle_timeout_seconds: float = Field(default=30.0, gt=0)
+    collector_max_backoff_seconds: float = Field(default=300.0, gt=0)
+    collector_relation_stats_seconds: float = Field(default=300.0, gt=0)
+    collector_capability_check_seconds: float = Field(default=900.0, gt=0)
+    collector_refresh_seconds: float = Field(default=30.0, gt=0)  # pick up added/removed sources
+    retention_days: int = Field(default=14, ge=1)
+
     # Users created by `python -m query_pulse.accounts.bootstrap`.
     admin_username: str = Field(default="admin", min_length=1)
     admin_password: SecretStr = Field(min_length=8)

@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from query_pulse.collector.models import CollectorState
 from query_pulse.db import Base, TimestampMixin, utcnow
 
 
@@ -74,6 +75,14 @@ class DataSource(TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="SourceCapability.position",
         lazy="selectin",
+    )
+    # Written by the collector; read-only from here. The database deletes it with the source.
+    collector_state: Mapped[CollectorState | None] = relationship(
+        CollectorState,
+        primaryjoin="DataSource.id == foreign(CollectorState.source_id)",
+        lazy="selectin",
+        viewonly=True,
+        uselist=False,
     )
 
 

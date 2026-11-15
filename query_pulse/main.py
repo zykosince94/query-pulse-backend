@@ -19,6 +19,7 @@ from query_pulse.config import Settings, get_settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import create_engine, create_sessionmaker
 from query_pulse.sources.router import router as sources_router
+from query_pulse.workload.router import router as workload_router
 
 VERSION = "0.1.0"
 
@@ -66,4 +67,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(sources_router)
+    app.include_router(workload_router)
     return app

@@ -156,3 +156,67 @@ def pg_tls() -> Iterator[Server]:
             "GRANT pg_monitor TO monitor",
         )
         yield Server(_host(container), int(container.get_exposed_port(5432)))
+
+
+# --- collector targets (Phase 3) --------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PgTarget(Server):
+    """A monitored PostgreSQL for collector tests, with superuser access for setting up."""
+
+    superuser: str
+    superpassword: str
+    container: PostgresContainer
+
+    def superuser_dsn(self, dbname: str = "collect_db") -> str:
+        return (
+            f"host={self.host} port={self.port} dbname={dbname} "
+            f"user={self.superuser} password={self.superpassword}"
+        )
+
+
+def _collector_target(*extra_settings: str) -> Iterator[PgTarget]:
+    command = "postgres -c shared_preload_libraries=pg_stat_statements " + " ".join(
+        f"-c {s}" for s in extra_settings
+    )
+    with PostgresContainer("postgres:16", driver=None).with_command(command) as container:
+        _superuser_sql(
+            container,
+            container.dbname,
+            "CREATE DATABASE collect_db",
+            "CREATE ROLE monitor LOGIN PASSWORD 'monitor-pass'",
+            "GRANT pg_monitor TO monitor",
+        )
+        _superuser_sql(
+            container,
+            "collect_db",
+            "CREATE EXTENSION pg_stat_statements",
+            "CREATE TABLE widgets (id bigserial PRIMARY KEY, name text)",
+            "INSERT INTO widgets (name) SELECT 'w' || g FROM generate_series(1, 1000) g",
+            "ANALYZE widgets",
+        )
+        yield PgTarget(
+            _host(container),
+            int(container.get_exposed_port(5432)),
+            container.username,
+            container.password,
+            container,
+        )
+
+
+@pytest.fixture(scope="session")
+def pg_collect() -> Iterator[PgTarget]:
+    yield from _collector_target()
+
+
+@pytest.fixture(scope="session")
+def pg_small_max() -> Iterator[PgTarget]:
+    """pg_stat_statements.max at its minimum (100), so evictions are easy to trigger."""
+    yield from _collector_target("pg_stat_statements.max=100")
+
+
+@pytest.fixture
+def pg_pausable() -> Iterator[PgTarget]:
+    """Its own container, so pausing it (to simulate an outage) can't affect other tests."""
+    yield from _collector_target()

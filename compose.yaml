@@ -81,7 +81,8 @@ services:
 
   app:
     build: .
-    environment:
+    image: query-pulse-backend:local
+    environment: &app-env
       QP_ENVIRONMENT: dev
       QP_DATABASE_URL: postgresql+psycopg://querypulse:querypulse@app-db:5432/querypulse
       QP_SESSION_SECRET: ${QP_SESSION_SECRET:-local-demo-session-secret-not-for-real-use}
@@ -91,6 +92,8 @@ services:
       QP_DEMO_ENABLED: ${QP_DEMO_ENABLED:-true}
       QP_DEMO_USERNAME: ${QP_DEMO_USERNAME:-demo}
       QP_DEMO_PASSWORD: ${QP_DEMO_PASSWORD:-demo-password}
+      # A short interval keeps the local demo lively; the production default is 60 s.
+      QP_COLLECTOR_INTERVAL_SECONDS: ${QP_COLLECTOR_INTERVAL_SECONDS:-15}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -100,6 +103,52 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
+
+  # Polls every enabled PostgreSQL source (one instance only). Starts after the API, which
+  # runs the migrations.
+  collector:
+    image: query-pulse-backend:local
+    command: ["python", "-m", "query_pulse.collector"]
+    environment: *app-env
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      # The supervisor touches this file every loop (collector_refresh_seconds, default 30 s).
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, sys, time;
+          p = '/tmp/query-pulse-collector-heartbeat';
+          sys.exit(0 if os.path.exists(p) and time.time() - os.path.getmtime(p) < 120 else 1)
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # Seeds the demo database (once) and then runs the planted-problem workload forever.
+  demo-workload:
+    image: query-pulse-backend:local
+    command:
+      - sh
+      - -c
+      - python -m query_pulse.demo.seed && exec python -m query_pulse.demo.workload
+    environment:
+      QP_DEMO_DSN: postgresql://postgres:postgres@demo-postgres:5432/shop
+      QP_DEMO_WORKLOAD_DSN: postgresql://shop_app:shop-app@demo-postgres:5432/shop
+      QP_DEMO_RATE: ${QP_DEMO_RATE:-20}
+      QP_DEMO_CUSTOMERS: ${QP_DEMO_CUSTOMERS:-20000}
+      QP_DEMO_PRODUCTS: ${QP_DEMO_PRODUCTS:-5000}
+      QP_DEMO_ORDERS: ${QP_DEMO_ORDERS:-200000}
+    depends_on:
+      demo-postgres:
+        condition: service_healthy
+      app:
+        condition: service_healthy  # the image is built for `app`
+    healthcheck:
+      disable: true
 
 volumes:
   app-db-data:
