@@ -1,0 +1,29 @@
+{
+  "description": "Projection is an expression; hint is a literal index name; skip is a value.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "status": "paid"
+    },
+    "projection": {
+      "total": 1,
+      "_id": 0
+    },
+    "hint": "status_1",
+    "skip": 40
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "status": "?"
+    },
+    "projection": {
+      "total": "?",
+      "_id": "?"
+    },
+    "hint": "status_1",
+    "skip": "?"
+  }
+}

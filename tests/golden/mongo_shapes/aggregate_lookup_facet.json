@@ -1,0 +1,118 @@
+{
+  "description": "$lookup keeps collection and field names and normalises its sub-pipeline; $facet normalises each branch.",
+  "op": "command",
+  "ns": "shop.orders",
+  "command": {
+    "aggregate": "orders",
+    "pipeline": [
+      {
+        "$lookup": {
+          "from": "customers",
+          "localField": "customerId",
+          "foreignField": "_id",
+          "as": "customer"
+        }
+      },
+      {
+        "$lookup": {
+          "from": "products",
+          "let": {
+            "p": "$productId"
+          },
+          "pipeline": [
+            {
+              "$match": {
+                "active": true
+              }
+            }
+          ],
+          "as": "product"
+        }
+      },
+      {
+        "$facet": {
+          "recent": [
+            {
+              "$sort": {
+                "placedAt": -1
+              }
+            },
+            {
+              "$limit": 3
+            }
+          ],
+          "big": [
+            {
+              "$match": {
+                "total": {
+                  "$gte": 500
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "$unwind": "$customer"
+      }
+    ],
+    "cursor": {
+      "batchSize": 50
+    }
+  },
+  "shape": {
+    "aggregate": "orders",
+    "pipeline": [
+      {
+        "$lookup": {
+          "from": "customers",
+          "localField": "customerId",
+          "foreignField": "_id",
+          "as": "customer"
+        }
+      },
+      {
+        "$lookup": {
+          "from": "products",
+          "let": {
+            "p": "$productId"
+          },
+          "pipeline": [
+            {
+              "$match": {
+                "active": "?"
+              }
+            }
+          ],
+          "as": "product"
+        }
+      },
+      {
+        "$facet": {
+          "recent": [
+            {
+              "$sort": {
+                "placedAt": -1
+              }
+            },
+            {
+              "$limit": "?"
+            }
+          ],
+          "big": [
+            {
+              "$match": {
+                "total": {
+                  "$gte": "?"
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "$unwind": "$customer"
+      }
+    ]
+  }
+}

@@ -21,7 +21,7 @@ from query_pulse.findings.schemas import (
     FindingStatusUpdate,
     RuleOut,
 )
-from query_pulse.sources.models import DataSource
+from query_pulse.sources.models import DataSource, SourceEngine
 from query_pulse.workload.models import Fingerprint
 from query_pulse.workload.service import as_utc
 
@@ -29,7 +29,11 @@ router = APIRouter(prefix="/api", tags=["findings"], dependencies=[Depends(curre
 
 
 async def _to_out(
-    session: AsyncSession, finding: Finding, source_name: str, query: str | None
+    session: AsyncSession,
+    finding: Finding,
+    source_name: str,
+    engine: SourceEngine,
+    query: str | None,
 ) -> FindingOut:
     rule = RULES_BY_ID.get(finding.rule_id)
     evidence: list[EvidenceOut] = []
@@ -45,6 +49,7 @@ async def _to_out(
         id=finding.id,
         source_id=finding.source_id,
         source_name=source_name,
+        engine=engine,
         rule_id=finding.rule_id,
         rule_title=rule.title if rule else finding.rule_id,
         target_kind=finding.target_kind,
@@ -71,7 +76,7 @@ async def _to_out(
 
 def _with_names() -> Any:
     return (
-        select(Finding, DataSource.name, Fingerprint.query)
+        select(Finding, DataSource.name, DataSource.engine, Fingerprint.query)
         .join(DataSource, DataSource.id == Finding.source_id)
         .outerjoin(Fingerprint, Fingerprint.id == Finding.fingerprint_id)
     )
@@ -120,15 +125,17 @@ async def list_findings(
             resolved=counts.get(FindingStatus.RESOLVED.value, 0),
             dismissed=counts.get(FindingStatus.DISMISSED.value, 0),
         ),
-        findings=[await _to_out(session, f, name, q) for f, name, q in rows],
+        findings=[await _to_out(session, f, name, engine, q) for f, name, engine, q in rows],
     )
 
 
-async def _load(session: AsyncSession, finding_id: int) -> tuple[Finding, str, str | None]:
+async def _load(
+    session: AsyncSession, finding_id: int
+) -> tuple[Finding, str, SourceEngine, str | None]:
     row = (await session.execute(_with_names().where(Finding.id == finding_id))).first()
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Finding not found")
-    return row[0], row[1], row[2]
+    return row[0], row[1], row[2], row[3]
 
 
 @router.get("/findings/{finding_id}", response_model=FindingOut, operation_id="getFinding")
@@ -145,7 +152,7 @@ async def update_finding(
     A dismissed finding stays dismissed however often its rule fires again. A resolved one
     reopens if the problem shows up in evidence collected after it was resolved.
     """
-    finding, source_name, query = await _load(session, finding_id)
+    finding, source_name, engine, query = await _load(session, finding_id)
     if finding.status != payload.status:
         now = utcnow()
         finding.status = payload.status
@@ -153,7 +160,7 @@ async def update_finding(
         finding.status_changed_at = now
         finding.resolved_at = now if payload.status == FindingStatus.RESOLVED.value else None
         await session.commit()
-    return await _to_out(session, finding, source_name, query)
+    return await _to_out(session, finding, source_name, engine, query)
 
 
 @router.get("/rules", response_model=list[RuleOut], operation_id="listRules")

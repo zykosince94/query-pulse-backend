@@ -37,14 +37,21 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
 - **Local stack** (`make demo`): app database, a demo PostgreSQL 16 with `pg_stat_statements` and
   a read-only `pg_monitor` role, and MongoDB 7 as a single-node replica set.
 
-- **The collector** (`python -m query_pulse.collector`): polls every enabled PostgreSQL source,
-  turns `pg_stat_statements`' cumulative counters into per-interval observations, and handles
-  resets, evictions and restarts without ever storing a negative or inflated number. It also
-  samples table and index statistics, re-checks capabilities, backs off when a database is down
-  (and recovers on its own), and deletes data older than 14 days.
+- **The collector** (`python -m query_pulse.collector`): polls every enabled source.
+  - PostgreSQL: turns `pg_stat_statements`' cumulative counters into per-interval
+    observations, and handles resets, evictions and restarts without ever storing a negative
+    or inflated number. It also samples table and index statistics.
+  - MongoDB: reads the operations the user's profiler recorded (`system.profile`) after a
+    cursor, normalises each into a **query shape** (every value becomes `?`, field names and
+    operators stay; golden files pin the rules) and stores one observation per shape per
+    cycle, with documents and index keys examined. It also samples `serverStatus`
+    (operation rates, connections, cache) and flags a full `system.profile`.
+  - For both: re-checks capabilities, backs off when a database is down (and recovers on its
+    own), and deletes data older than 14 days.
 - **Workload read API**: per-minute trends per source and a health summary for the home page.
-- **Workload explorer API**: operations ranked by total time, mean time or calls over any time
-  window (the last N minutes, or absolute start/end), filtered by source and statement text.
+- **Workload explorer API**: PostgreSQL and MongoDB operations in one ranking, by total time,
+  mean time or calls over any time window (the last N minutes, or absolute start/end),
+  filtered by source and statement or shape text.
   Each operation has its metrics over the window and a history per minute or hour (`date_trunc`
   buckets in SQL). Mean time is total time ÷ calls over the whole window, never an average of
   averages.
@@ -54,21 +61,27 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
   within a cycle. Plans are stored as immutable evidence: a new row only when the plan changes.
   When a statement can't be planned (missing `SELECT` grant, cut-off text, utility statement),
   the reason is stored and shown instead of an empty viewer.
+- **MongoDB plans**: `explain` at queryPlanner verbosity (nothing executes) of each busy read
+  shape, from a recent profiled command the collector holds **in memory only**. The stored plan
+  is redacted: filters normalised, index bounds kept only when they cover the whole index.
+  Query Pulse never stores MongoDB query values ([ADR 0010](docs/adr/0010-no-stored-query-values.md)).
 - **Rule-based findings**: after collection, a declarative rule engine checks each source's
   evidence and records findings, each with a confidence, the kind of evidence (a captured plan,
   or a statistics heuristic), the facts behind it, a suggested fix as SQL to review (never run),
-  and links to the exact observations, plan and table samples it cites. Four rules cover the
+  and links to the exact observations, plan and table samples it cites. Seven rules cover the
   demo's planted problems: PG-SEQSCAN-HOT (P1), PG-SORT-NO-INDEX (P2), PG-LEADING-WILDCARD (P3)
-  and PG-UNUSED-INDEX (P4). There is one finding per rule and target: a dismissed finding stays
-  dismissed, a resolved one reopens only on newer evidence, and open ones resolve on their own
-  once the problem is gone.
+  and PG-UNUSED-INDEX (P4) for PostgreSQL; MDB-COLLSCAN (M1), MDB-BLOCKING-SORT (M2) and
+  MDB-EXAMINED-RATIO (M3) for MongoDB, whose fixes are mongosh commands to review. There is
+  one finding per rule and target: a dismissed finding stays dismissed, a resolved one reopens
+  only on newer evidence, and open ones resolve on their own once the problem is gone.
 - **Hardening**: an Origin check on every state-changing request (cross-site writes get 403), a
   login rate limit (10 failures per client per 5 minutes, then 429), and JSON logs where every
   line carries the request ID, which is also returned in the `X-Request-ID` header.
-- **Demo data**: a seeded e-commerce database with four planted problems (P1–P4) and a workload
-  that runs them next to healthy controls, so `make demo` has real traffic to measure.
+- **Demo data**: a seeded e-commerce database in PostgreSQL with four planted problems (P1–P4),
+  and orders and products in MongoDB with three (M1–M3), with the profiler on for `shop`. A
+  workload runs them next to healthy controls, so `make demo` has real traffic to measure.
 
-Not yet: MongoDB collection (Phase 6), the AI assistant (Phase 7).
+Not yet: the AI assistant and release hardening (Phase 7).
 
 ## Quick start
 
@@ -93,6 +106,12 @@ minute. After a couple of minutes the planted problem P1 (`orders` looked up by 
 which has no index) is at the top of the explorer, and its plan shows the sequential scan.
 Within about three minutes the Findings page shows one finding for each planted problem, P1–P4,
 and none for the healthy controls.
+
+Add the demo MongoDB the same way (engine MongoDB, host `mongo`, port 27017, database `shop`,
+no username: the local demo runs without auth). The demo seed has already turned its profiler
+on, as a user would; Query Pulse only reads it. Within a minute its query shapes join the same
+explorer, and the Findings page shows M1 (lookups by `customerId`, a collection scan), M2 (the
+latest orders sorted in memory) and M3 (an unanchored `$regex` reading the whole `sku` index).
 [docs/demo-checklist.md](docs/demo-checklist.md) walks through the whole demo.
 
 ## Development
@@ -150,11 +169,12 @@ query_pulse/
   db.py           engine, sessions, declarative base
   accounts/       users, password hashing, sessions, access guards, login rate limit, bootstrap
   sources/        data sources: models, schemas, service, API
-  collector/      delta engine, collection cycle, supervisor, `python -m query_pulse.collector`
-  workload/       fingerprints, observations, table stats, plans; explorer, plan and trend APIs
+  collector/      delta engine, collection cycle (PostgreSQL; MongoDB in mongo.py), supervisor
+  workload/       fingerprints, observations, table stats, plans; explorer, plan and trend APIs;
+                  MongoDB shape normaliser (mongo_shape.py) and plan redaction (mongo_plan.py)
   findings/       rules (rules.py), rule engine and lifecycle (engine.py), findings API
   demo/           demo seed and workload (not part of the product)
-  adapters/       PostgreSQL and MongoDB adapters (connect, version, capabilities)
+  adapters/       PostgreSQL and MongoDB adapters (connect, capabilities, collection reads)
   crypto.py       Fernet encryption for stored credentials
 migrations/       Alembic migrations
 demo/             demo database init scripts

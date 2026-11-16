@@ -1,0 +1,47 @@
+{
+ "explainVersion": "1",
+ "queryPlanner": {
+  "namespace": "probe.orders",
+  "indexFilterSet": false,
+  "parsedQuery": {
+   "customerId": {
+    "$eq": 7
+   }
+  },
+  "queryHash": "4E6AB65A",
+  "planCacheKey": "4E6AB65A",
+  "optimizationTimeMillis": 0,
+  "maxIndexedOrSolutionsReached": false,
+  "maxIndexedAndSolutionsReached": false,
+  "maxScansToExplodeReached": false,
+  "winningPlan": {
+   "stage": "SORT",
+   "sortPattern": {
+    "placedAt": -1
+   },
+   "memLimit": 104857600,
+   "type": "simple",
+   "inputStage": {
+    "stage": "COLLSCAN",
+    "filter": {
+     "customerId": {
+      "$eq": 7
+     }
+    },
+    "direction": "forward"
+   }
+  },
+  "rejectedPlans": []
+ },
+ "command": {
+  "find": "orders",
+  "filter": {
+   "customerId": 7
+  },
+  "sort": {
+   "placedAt": -1
+  },
+  "$db": "probe"
+ },
+ "ok": 1
+}

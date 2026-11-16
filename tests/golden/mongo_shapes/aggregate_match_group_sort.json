@@ -1,0 +1,90 @@
+{
+  "description": "Each stage in its own context: $match filter, $group expression, $sort literal, $limit value.",
+  "op": "command",
+  "ns": "shop.orders",
+  "command": {
+    "aggregate": "orders",
+    "pipeline": [
+      {
+        "$match": {
+          "status": "paid",
+          "total": {
+            "$gt": 10
+          }
+        }
+      },
+      {
+        "$group": {
+          "_id": "$customerId",
+          "n": {
+            "$sum": 1
+          },
+          "spent": {
+            "$sum": "$total"
+          }
+        }
+      },
+      {
+        "$sort": {
+          "n": -1
+        }
+      },
+      {
+        "$limit": 5
+      }
+    ],
+    "cursor": {},
+    "lsid": {
+      "id": {
+        "$binary": {
+          "base64": "fSngGRCSRCeU+ejAH+illg==",
+          "subType": "04"
+        }
+      }
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1794826806,
+          "i": 5014
+        }
+      }
+    },
+    "$readPreference": {
+      "mode": "primaryPreferred"
+    },
+    "$db": "shop"
+  },
+  "shape": {
+    "aggregate": "orders",
+    "pipeline": [
+      {
+        "$match": {
+          "status": "?",
+          "total": {
+            "$gt": "?"
+          }
+        }
+      },
+      {
+        "$group": {
+          "_id": "$customerId",
+          "n": {
+            "$sum": "?"
+          },
+          "spent": {
+            "$sum": "$total"
+          }
+        }
+      },
+      {
+        "$sort": {
+          "n": -1
+        }
+      },
+      {
+        "$limit": "?"
+      }
+    ]
+  }
+}

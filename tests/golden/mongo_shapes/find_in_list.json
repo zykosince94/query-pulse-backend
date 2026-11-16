@@ -1,0 +1,45 @@
+{
+  "description": "A list of values is one value, so lists of any length share a shape.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "orderNo": {
+        "$in": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "lsid": {
+      "id": {
+        "$binary": {
+          "base64": "fSngGRCSRCeU+ejAH+illg==",
+          "subType": "04"
+        }
+      }
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1794826806,
+          "i": 5014
+        }
+      }
+    },
+    "$readPreference": {
+      "mode": "primaryPreferred"
+    },
+    "$db": "shop"
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "orderNo": {
+        "$in": "?"
+      }
+    }
+  }
+}

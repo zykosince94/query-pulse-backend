@@ -22,23 +22,36 @@ from query_pulse.db import Base, utcnow
 
 
 class Fingerprint(Base):
-    """One normalised statement on one source.
+    """One normalised operation on one source: a PostgreSQL statement or a MongoDB shape.
 
-    PostgreSQL's own `queryid` is the fingerprint; there is no custom SQL normaliser. The full
-    identity in pg_stat_statements is (dbid, userid, queryid, toplevel): the same query run by
-    two roles, or nested inside a function versus run directly, is counted separately.
+    PostgreSQL: its own `queryid` is the fingerprint; there is no custom SQL normaliser. The
+    full identity in pg_stat_statements is (dbid, userid, queryid, toplevel): the same query
+    run by two roles, or nested inside a function versus run directly, is counted separately.
+
+    MongoDB: the sha256 of the normalised query shape (workload/mongo_shape.py), with the
+    collection and command beside it. The PostgreSQL columns are NULL for MongoDB rows and
+    vice versa; NULLs never collide in a unique constraint, so each engine's constraint
+    applies only to its own rows.
     """
 
     __tablename__ = "fingerprints"
-    __table_args__ = (UniqueConstraint("source_id", "dbid", "userid", "queryid", "toplevel"),)
+    __table_args__ = (
+        UniqueConstraint("source_id", "dbid", "userid", "queryid", "toplevel"),
+        UniqueConstraint("source_id", "shape_hash", name="uq_fingerprints_source_id_shape_hash"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id", ondelete="CASCADE"))
-    dbid: Mapped[int] = mapped_column(BigInteger)
-    userid: Mapped[int] = mapped_column(BigInteger)
-    queryid: Mapped[int] = mapped_column(BigInteger)
-    toplevel: Mapped[bool] = mapped_column(Boolean)
-    # Representative normalised text (`... WHERE id = $1`), as pg_stat_statements reports it.
+    engine: Mapped[str] = mapped_column(String(16), default="postgres")
+    dbid: Mapped[int | None] = mapped_column(BigInteger)
+    userid: Mapped[int | None] = mapped_column(BigInteger)
+    queryid: Mapped[int | None] = mapped_column(BigInteger)
+    toplevel: Mapped[bool | None] = mapped_column(Boolean)
+    shape_hash: Mapped[str | None] = mapped_column(String(64))
+    namespace: Mapped[str | None] = mapped_column(String(255))  # "shop.orders"
+    command: Mapped[str | None] = mapped_column(String(32))  # find, aggregate, ...
+    # PostgreSQL: representative normalised text (`... WHERE id = $1`), as pg_stat_statements
+    # reports it. MongoDB: the shape as JSON, every value replaced with "?".
     query: Mapped[str] = mapped_column(Text)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -65,6 +78,9 @@ class Observation(Base):
     rows: Mapped[int] = mapped_column(BigInteger)
     shared_blks_hit: Mapped[int] = mapped_column(BigInteger)
     shared_blks_read: Mapped[int] = mapped_column(BigInteger)
+    # MongoDB only (profiler): index keys and documents examined. NULL for PostgreSQL.
+    keys_examined: Mapped[int | None] = mapped_column(BigInteger)
+    docs_examined: Mapped[int | None] = mapped_column(BigInteger)
 
 
 class RelationStat(Base):
@@ -93,7 +109,11 @@ class RelationStat(Base):
 
 
 class Plan(Base):
-    """A generic plan captured for one fingerprint: EXPLAIN (GENERIC_PLAN, FORMAT JSON).
+    """A plan captured for one fingerprint.
+
+    PostgreSQL: EXPLAIN (GENERIC_PLAN, FORMAT JSON), as returned. MongoDB: explain at
+    queryPlanner verbosity, redacted so no query value is stored (workload/mongo_plan.py),
+    wrapped in a one-element list like PostgreSQL's.
 
     Rows are immutable evidence (Phase 5 findings cite them by id), so a new row is written
     only when the plan changes; re-checking an unchanged plan just moves `checked_at`. A
@@ -115,3 +135,26 @@ class Plan(Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ServerSample(Base):
+    """A point-in-time sample of a MongoDB server's serverStatus (MongoDB sources only).
+
+    Opcounters are cumulative since the server started; rates come from comparing two
+    samples, and a lower uptime than the previous sample means the server restarted.
+    """
+
+    __tablename__ = "server_samples"
+    __table_args__ = (Index("ix_server_samples_source_captured", "source_id", "captured_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("data_sources.id", ondelete="CASCADE"))
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    uptime_seconds: Mapped[float] = mapped_column(Float)
+    # {"insert": n, "query": n, "update": n, "delete": n, "getmore": n, "command": n}
+    opcounters: Mapped[dict[str, int]] = mapped_column(JSON)
+    connections_current: Mapped[int | None] = mapped_column(Integer)
+    connections_available: Mapped[int | None] = mapped_column(Integer)
+    cache_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    cache_max_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    repl_state: Mapped[str | None] = mapped_column(String(32))

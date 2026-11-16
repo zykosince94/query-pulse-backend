@@ -1,0 +1,13 @@
+{
+  "description": "A command the profiler truncated has no structure left.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "$truncated": "{ find: \"orders\", filter: { $or: [ { ... } ] } }",
+    "comment": "x"
+  },
+  "shape": {
+    "find": "orders",
+    "$truncated": "?"
+  }
+}

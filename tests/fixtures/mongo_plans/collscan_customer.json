@@ -1,0 +1,36 @@
+{
+ "explainVersion": "1",
+ "queryPlanner": {
+  "namespace": "probe.orders",
+  "indexFilterSet": false,
+  "parsedQuery": {
+   "customerId": {
+    "$eq": 42
+   }
+  },
+  "queryHash": "DE6BAE07",
+  "planCacheKey": "DE6BAE07",
+  "optimizationTimeMillis": 0,
+  "maxIndexedOrSolutionsReached": false,
+  "maxIndexedAndSolutionsReached": false,
+  "maxScansToExplodeReached": false,
+  "winningPlan": {
+   "stage": "COLLSCAN",
+   "filter": {
+    "customerId": {
+     "$eq": 42
+    }
+   },
+   "direction": "forward"
+  },
+  "rejectedPlans": []
+ },
+ "command": {
+  "find": "orders",
+  "filter": {
+   "customerId": 42
+  },
+  "$db": "probe"
+ },
+ "ok": 1
+}

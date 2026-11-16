@@ -1,8 +1,8 @@
-"""Create and fill the demo e-commerce schema. Safe to run repeatedly.
+"""Create and fill the demo e-commerce data, PostgreSQL and MongoDB. Safe to run repeatedly.
 
     python -m query_pulse.demo.seed
 
-Connects as a superuser (QP_DEMO_DSN, default: the compose demo database) and:
+PostgreSQL: connects as a superuser (QP_DEMO_DSN, default: the compose demo database) and:
 
 - creates customers, products and orders with the planted problems built in;
 - fills them with generated rows (sizes from QP_DEMO_CUSTOMERS / _PRODUCTS / _ORDERS);
@@ -15,6 +15,17 @@ Planted problems (each will be paired with a healthy control in the workload):
   P2  no index on orders.created_at         → "latest orders" sorts the whole table
   P3  products searched with LIKE '%term%'  → a leading wildcard can't use a b-tree index
   P4  idx_orders_legacy_lookup is never used → a large index that only costs writes
+
+MongoDB (QP_DEMO_MONGO_URL; Phase 6): fills `shop.orders` and `shop.products` and turns the
+profiler on for `shop`, the way a user would before adding the source (Query Pulse itself
+never enables it):
+
+  M1  orders.customerId has no index       → lookups by customer scan the collection
+  M2  no index on orders.placedAt          → "latest orders" sorts in memory
+  M3  products.sku searched with an unanchored $regex → the sku index is scanned end to end
+
+The demo profiles every operation (level 1, slowms 0) so the healthy controls show up in the
+explorer too; a real deployment would keep slowms at its default (100 ms) or higher.
 """
 
 from __future__ import annotations
@@ -22,12 +33,20 @@ from __future__ import annotations
 import logging
 import os
 import time
+from datetime import UTC, datetime
 
 import psycopg
+from pymongo import ASCENDING, MongoClient
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DSN = "postgresql://postgres:postgres@demo-postgres:5432/shop"
+DEFAULT_MONGO_URL = "mongodb://mongo:27017/?directConnection=true"
+MONGO_DATABASE = "shop"
+# system.profile is capped (1 MB by default, a few seconds of a busy demo). 64 MB holds
+# several collection cycles even at a high QP_DEMO_MONGO_RATE.
+PROFILE_SIZE_BYTES = 64 * 1024 * 1024
+STATUSES = ["pending", "paid", "shipped", "delivered", "cancelled"]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS customers (
@@ -143,6 +162,59 @@ def seed(dsn: str, customers: int, products: int, orders: int) -> dict[str, int]
     return counts
 
 
+def seed_mongo(url: str, customers: int, products: int, orders: int) -> dict[str, int]:
+    """Fill empty collections, create the control indexes, and turn the profiler on."""
+    client: MongoClient[dict[str, object]] = MongoClient(url, appname="shop-seed")
+    with client:
+        db = client[MONGO_DATABASE]
+        db.command("profile", 0)  # off while loading, so the seed isn't profiled
+        if db.orders.estimated_document_count() == 0:
+            started = time.perf_counter()
+            now = time.time()
+            batch = []
+            for n in range(1, orders + 1):
+                batch.append(
+                    {
+                        "orderNo": n,
+                        "customerId": 1 + (n * 7919) % customers,  # M1: no index on this
+                        "status": STATUSES[n % len(STATUSES)],
+                        "total": round(10 + (n * 37) % 990 + (n % 100) / 100, 2),
+                        # M2: no index on placedAt
+                        "placedAt": datetime.fromtimestamp(now - (n * 104729) % (730 * 86400), UTC),
+                    }
+                )
+                if len(batch) == 5_000:
+                    db.orders.insert_many(batch, ordered=False)
+                    batch = []
+            if batch:
+                db.orders.insert_many(batch, ordered=False)
+            logger.info("seeded mongo orders in %.1fs", time.perf_counter() - started)
+        if db.products.estimated_document_count() == 0:
+            db.products.insert_many(
+                [
+                    {"sku": f"SKU-{n:06d}", "name": f"Product {n}", "price": 5 + n % 495}
+                    for n in range(1, products + 1)
+                ],
+                ordered=False,
+            )
+        db.orders.create_index([("orderNo", ASCENDING)], name="orderNo_1")  # control MC2
+        db.products.create_index([("sku", ASCENDING)], name="sku_1")  # M3's index, and MC4's
+        # A bigger capped system.profile (it can only be recreated while profiling is off).
+        stats = (
+            db.command("collStats", "system.profile")
+            if "system.profile" in set(db.list_collection_names())
+            else {}
+        )
+        if int(stats.get("maxSize", 0)) < PROFILE_SIZE_BYTES:
+            db.drop_collection("system.profile")
+            db.create_collection("system.profile", capped=True, size=PROFILE_SIZE_BYTES)
+        db.command("profile", 1, slowms=0)
+        return {
+            "orders": int(db.orders.estimated_document_count()),
+            "products": int(db.products.estimated_document_count()),
+        }
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     counts = seed(
@@ -152,6 +224,15 @@ def main() -> None:
         orders=_size("QP_DEMO_ORDERS", 200_000),
     )
     logger.info("demo database ready: %s", counts)
+    mongo_url = os.environ.get("QP_DEMO_MONGO_URL", DEFAULT_MONGO_URL)
+    if mongo_url:
+        mongo_counts = seed_mongo(
+            mongo_url,
+            customers=_size("QP_DEMO_CUSTOMERS", 20_000),
+            products=_size("QP_DEMO_MONGO_PRODUCTS", 20_000),
+            orders=_size("QP_DEMO_MONGO_ORDERS", 50_000),
+        )
+        logger.info("demo mongodb ready: %s", mongo_counts)
 
 
 if __name__ == "__main__":

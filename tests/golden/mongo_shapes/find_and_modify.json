@@ -1,0 +1,35 @@
+{
+  "description": "findAndModify: query is a filter, update is an expression, flags are literal.",
+  "op": "command",
+  "ns": "shop.orders",
+  "command": {
+    "findAndModify": "orders",
+    "query": {
+      "orderNo": 7
+    },
+    "update": {
+      "$set": {
+        "status": "shipped"
+      },
+      "$inc": {
+        "version": 1
+      }
+    },
+    "new": true
+  },
+  "shape": {
+    "findAndModify": "orders",
+    "query": {
+      "orderNo": "?"
+    },
+    "update": {
+      "$set": {
+        "status": "?"
+      },
+      "$inc": {
+        "version": "?"
+      }
+    },
+    "new": true
+  }
+}

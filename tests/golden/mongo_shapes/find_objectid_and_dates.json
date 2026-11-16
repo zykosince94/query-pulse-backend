@@ -1,0 +1,31 @@
+{
+  "description": "ObjectIds and dates are values.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "_id": {
+        "$oid": "6afae23675b1e33959ac815d"
+      },
+      "placedAt": {
+        "$gte": {
+          "$date": "2026-01-01T00:00:00Z"
+        },
+        "$lt": {
+          "$date": "2026-02-01T00:00:00Z"
+        }
+      }
+    }
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "_id": "?",
+      "placedAt": {
+        "$gte": "?",
+        "$lt": "?"
+      }
+    }
+  }
+}

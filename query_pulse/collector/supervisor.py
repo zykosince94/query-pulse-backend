@@ -1,4 +1,4 @@
-"""The long-running collector: one asyncio task per enabled PostgreSQL source.
+"""The long-running collector: one asyncio task per enabled source (PostgreSQL or MongoDB).
 
     supervisor loop (every collector_refresh_seconds)
       ├─ start a task for each newly enabled source, cancel tasks for removed/disabled ones
@@ -30,7 +30,7 @@ from query_pulse.collector.cycle import Collector
 from query_pulse.collector.models import CollectorHeartbeat
 from query_pulse.config import Settings
 from query_pulse.db import utcnow
-from query_pulse.sources.models import DataSource, SourceEngine
+from query_pulse.sources.models import DataSource
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +54,7 @@ class Supervisor:
 
     async def enabled_sources(self) -> set[int]:
         async with self.sessionmaker() as session:
-            ids = await session.scalars(
-                select(DataSource.id).where(
-                    DataSource.enabled.is_(True), DataSource.engine == SourceEngine.POSTGRES
-                )
-            )
+            ids = await session.scalars(select(DataSource.id).where(DataSource.enabled.is_(True)))
             return set(ids)
 
     async def reconcile(self) -> None:
@@ -72,6 +68,8 @@ class Supervisor:
         for source_id in self.tasks.keys() - wanted:
             logger.info("collector: stopping source_id=%s", source_id)
             self.tasks.pop(source_id).cancel()
+            # A removed or disabled source's in-memory commands go with it.
+            self.collector.samples.pop(source_id, None)
 
     async def source_loop(self, source_id: int, rng: random.Random | None = None) -> None:
         rng = rng or random.Random()  # noqa: S311 - timing jitter, not security

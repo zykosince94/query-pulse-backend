@@ -127,6 +127,9 @@ def _metrics(row: Any) -> OperationMetrics:
         rows=int(row.rows or 0),
         shared_blks_hit=int(row.hit or 0),
         shared_blks_read=int(row.read or 0),
+        # SUM over NULLs is NULL: None for PostgreSQL operations.
+        keys_examined=None if row.keys is None else int(row.keys),
+        docs_examined=None if row.docs is None else int(row.docs),
     )
 
 
@@ -139,6 +142,8 @@ def _aggregate(window: Window) -> Select[*tuple[Any, ...]]:
             func.sum(Observation.rows).label("rows"),
             func.sum(Observation.shared_blks_hit).label("hit"),
             func.sum(Observation.shared_blks_read).label("read"),
+            func.sum(Observation.keys_examined).label("keys"),
+            func.sum(Observation.docs_examined).label("docs"),
         ),
         window,
     ).group_by(Observation.fingerprint_id)
@@ -166,6 +171,8 @@ def _summary(
         source_name=source.name,
         engine=source.engine,
         query=fingerprint.query,
+        namespace=fingerprint.namespace,
+        command=fingerprint.command,
         share_of_total_time=(metrics.total_exec_time_ms / source_total) if source_total else 0.0,
         first_seen_at=as_utc(fingerprint.first_seen_at),
         last_seen_at=as_utc(fingerprint.last_seen_at),

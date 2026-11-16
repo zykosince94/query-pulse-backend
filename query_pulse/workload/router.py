@@ -18,11 +18,12 @@ from query_pulse.sources.models import DataSource
 from query_pulse.sources.schemas import CollectorStatus
 from query_pulse.workload import explorer, plans, service
 from query_pulse.workload.explorer import MAX_WINDOW, Window
-from query_pulse.workload.models import Fingerprint, Plan
+from query_pulse.workload.models import Fingerprint, Plan, ServerSample
 from query_pulse.workload.schemas import (
     OperationDetail,
     OperationList,
     OperationPlan,
+    ServerMetrics,
     SortKey,
     SourceHealth,
     SourceTrend,
@@ -40,6 +41,56 @@ async def source_trend(source_id: int, session: SessionDep, minutes: Minutes = 6
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Source not found")
     points = (await service.trends(session, [source_id], minutes))[source_id]
     return SourceTrend(source_id=source_id, minutes=minutes, bucket_seconds=60, points=points)
+
+
+@router.get(
+    "/sources/{source_id}/server",
+    response_model=ServerMetrics | None,
+    operation_id="getSourceServerMetrics",
+)
+async def source_server_metrics(source_id: int, session: SessionDep) -> ServerMetrics | None:
+    """A MongoDB source's latest serverStatus sample and operation rates (null if none yet)."""
+    if await session.get(DataSource, source_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Source not found")
+    latest = list(
+        await session.scalars(
+            select(ServerSample)
+            .where(ServerSample.source_id == source_id)
+            .order_by(ServerSample.captured_at.desc(), ServerSample.id.desc())
+            .limit(2)
+        )
+    )
+    if not latest:
+        return None
+    current = latest[0]
+    rates: dict[str, float] | None = None
+    seconds: float | None = None
+    if len(latest) == 2:
+        before = latest[1]
+        seconds = (
+            service.as_utc(current.captured_at) - service.as_utc(before.captured_at)
+        ).total_seconds()
+        # A lower uptime means the server restarted and its counters started again.
+        if seconds > 0 and current.uptime_seconds >= before.uptime_seconds:
+            rates = {
+                name: max(0, value - before.opcounters.get(name, 0)) / seconds
+                for name, value in current.opcounters.items()
+            }
+        else:
+            seconds = None
+    return ServerMetrics(
+        source_id=source_id,
+        captured_at=service.as_utc(current.captured_at),
+        uptime_seconds=current.uptime_seconds,
+        connections_current=current.connections_current,
+        connections_available=current.connections_available,
+        cache_bytes=current.cache_bytes,
+        cache_max_bytes=current.cache_max_bytes,
+        repl_state=current.repl_state,
+        opcounters=current.opcounters,
+        rates_per_second=rates,
+        rate_seconds=seconds,
+    )
 
 
 @router.get("/workload/health", response_model=list[SourceHealth], operation_id="getWorkloadHealth")
@@ -155,7 +206,7 @@ async def get_operation(
     return OperationDetail(
         operation=await explorer.operation_summary(session, fingerprint, source, window),
         source=sources.to_out(source),
-        toplevel=fingerprint.toplevel,
+        toplevel=fingerprint.toplevel is not False,
         start=window.start,
         end=window.end,
         bucket_seconds=int(window.step.total_seconds()),
@@ -183,7 +234,11 @@ async def get_operation_plan(operation_id: int, session: SessionDep) -> Operatio
 async def capture_operation_plan(
     operation_id: int, request: Request, session: SessionDep, _: Writer
 ) -> OperationPlan:
-    """Plan the statement again now with EXPLAIN (GENERIC_PLAN). Never executes it."""
+    """Plan the statement again now with EXPLAIN (GENERIC_PLAN). Never executes it.
+
+    PostgreSQL only: MongoDB plans need a profiled command, which only the collector holds
+    (in memory), so for a MongoDB operation this returns the stored plan unchanged.
+    """
     fingerprint, source = await _operation_or_404(session, operation_id)
     if not plans.plans_available(source):
         return plans.to_out(fingerprint, source, await plans.latest_plan(session, fingerprint.id))

@@ -1,0 +1,23 @@
+{
+  "description": "distinct's key is a field name (kept).",
+  "op": "command",
+  "ns": "shop.orders",
+  "command": {
+    "distinct": "orders",
+    "key": "status",
+    "query": {
+      "total": {
+        "$gt": 100
+      }
+    }
+  },
+  "shape": {
+    "distinct": "orders",
+    "key": "status",
+    "query": {
+      "total": {
+        "$gt": "?"
+      }
+    }
+  }
+}

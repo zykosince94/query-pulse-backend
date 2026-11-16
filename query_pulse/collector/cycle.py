@@ -1,4 +1,8 @@
-"""One collection cycle for one source: connect, snapshot, compute deltas, store, update state.
+"""One collection cycle for one source: connect, read, store, update state.
+
+PostgreSQL: snapshot pg_stat_statements, compute deltas against the stored baseline, store
+them, plan the busiest statements. MongoDB: read the profiler after a cursor and store one
+observation per query shape (collector/mongo.py).
 
 Every cycle opens its own database session and its own monitoring connection, and never
 raises: failures are recorded on the source (status `failing`, `last_error`) so the
@@ -13,11 +17,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import psycopg
+from pymongo.errors import OperationFailure, PyMongoError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from query_pulse.adapters import AdapterError, ErrorCode
+from query_pulse.adapters.mongodb import MongoAdapter
 from query_pulse.adapters.postgres import PostgresAdapter, StatementsReading
+from query_pulse.collector import mongo
 from query_pulse.collector.delta import (
     Counters,
     DeltaResult,
@@ -26,7 +33,7 @@ from query_pulse.collector.delta import (
     compute_deltas,
 )
 from query_pulse.collector.models import CollectorState
-from query_pulse.collector.warnings import eviction_warning
+from query_pulse.collector.warnings import source_warnings
 from query_pulse.config import Settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import utcnow
@@ -34,7 +41,13 @@ from query_pulse.findings import engine as findings
 from query_pulse.sources import service as sources
 from query_pulse.sources.models import DataSource, SourceEngine, SourceStatus
 from query_pulse.workload import plans
-from query_pulse.workload.models import Fingerprint, Observation, Plan, RelationStat
+from query_pulse.workload.models import (
+    Fingerprint,
+    Observation,
+    Plan,
+    RelationStat,
+    ServerSample,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +90,22 @@ class Collector:
         sessionmaker: async_sessionmaker[AsyncSession],
         cipher: CredentialCipher,
         adapter: PostgresAdapter | None = None,
+        mongo_adapter: MongoAdapter | None = None,
     ) -> None:
         self.settings = settings
         self.sessionmaker = sessionmaker
         self.cipher = cipher
         self.adapter = adapter or PostgresAdapter()
+        self.mongo = mongo_adapter or MongoAdapter()
+        # The newest command of each MongoDB read shape, per source, for explain. Process
+        # memory only: never written to the app database or logged (ADR 0010).
+        self.samples: dict[int, mongo.SampleCache] = {}
 
     async def collect(self, source_id: int) -> CycleOutcome:
         """Run one cycle. Never raises (except cancellation)."""
         async with self.sessionmaker() as session:
             source = await session.get(DataSource, source_id)
-            if source is None or not source.enabled or source.engine is not SourceEngine.POSTGRES:
+            if source is None or not source.enabled:
                 return CycleOutcome(ok=True, skipped=True)
             state = await session.get(CollectorState, source_id)
             if state is None:
@@ -100,7 +118,10 @@ class Collector:
             state.last_attempt_at = now
             try:
                 async with asyncio.timeout(self.settings.collector_cycle_timeout_seconds):
-                    outcome = await self._collect(session, source, state, now)
+                    if source.engine is SourceEngine.MONGODB:
+                        outcome = await self._collect_mongo(session, source, state, now)
+                    else:
+                        outcome = await self._collect(session, source, state, now)
             except AdapterError as error:
                 outcome = self._record_failure(source, state, error.message, error.code, now)
             except TimeoutError:
@@ -112,13 +133,22 @@ class Collector:
             except psycopg.Error as exc:
                 message = f"Collection query failed: {str(exc).strip().splitlines()[0]}"
                 outcome = self._record_failure(source, state, message, ErrorCode.UNKNOWN, now)
+            except OperationFailure as exc:
+                # Only the code: MongoDB's message can quote a query's values.
+                message = f"A collection command failed (MongoDB error {exc.code})."
+                outcome = self._record_failure(source, state, message, ErrorCode.UNKNOWN, now)
+            except PyMongoError as exc:
+                message = (
+                    f"Lost the connection to MongoDB during collection ({type(exc).__name__})."
+                )
+                outcome = self._record_failure(source, state, message, ErrorCode.UNREACHABLE, now)
             except Exception:  # noqa: BLE001 - a bug must not kill the source's loop
                 logger.exception("collector: unexpected error for source=%s", source.name)
                 message = "Unexpected collector error; see the collector logs."
                 outcome = self._record_failure(source, state, message, ErrorCode.UNKNOWN, now)
             await session.commit()
-        # Only after a real collection: a skipped source (disabled, or not PostgreSQL) has no
-        # new evidence, and judging its ageing data would "resolve" findings that aren't fixed.
+        # Only after a real collection: a skipped (disabled) source has no new evidence, and
+        # judging its ageing data would "resolve" findings that aren't fixed.
         if outcome.ok and not outcome.skipped:
             await self.evaluate_rules(source_id)
         return outcome
@@ -206,16 +236,7 @@ class Collector:
             )
             state.last_relation_stats_at = now
 
-        state.consecutive_failures = 0
-        state.last_success_at = now
-        state.last_error = None
-        source.last_error = None
-        all_available = all(c.available for c in source.capabilities)
-        source.status = (
-            SourceStatus.HEALTHY
-            if all_available and eviction_warning(state, now) is None
-            else SourceStatus.DEGRADED
-        )
+        self._record_success(source, state, now)
         logger.info(
             "collector: source=%s observations=%d discarded=%s",
             source.name,
@@ -223,6 +244,87 @@ class Collector:
             result.discarded,
         )
         return CycleOutcome(ok=True, observations=stored, discarded=result.discarded)
+
+    async def _collect_mongo(
+        self, session: AsyncSession, source: DataSource, state: CollectorState, now: datetime
+    ) -> CycleOutcome:
+        params = sources.params_for(
+            sources.connection_fields(source),
+            sources.stored_password(source, self.cipher),
+            self.settings.source_connect_timeout_seconds,
+        )
+        if _due(
+            state.last_capability_check_at, self.settings.collector_capability_check_seconds, now
+        ):
+            sources.record_success(source, await self.mongo.probe(params))
+            state.last_capability_check_at = now
+
+        client = await self.mongo.connect(params)
+        try:
+            # Someone turned the profiler on or off since the last check: re-check now, so
+            # the checklist (and the explorer's "profiling is off" state) is current.
+            try:
+                level: int | None = await self.mongo.profiling_level(client, source.database)
+            except OperationFailure:
+                level = None
+            profiler = next((c for c in source.capabilities if c.feature == "profiler"), None)
+            if level is not None and profiler is not None and (level > 0) != profiler.available:
+                sources.record_success(source, await self.mongo.probe(params))
+                state.last_capability_check_at = now
+
+            target = (source.host, str(source.port), source.database, source.username)
+            cache = self.samples.get(source.id)
+            if cache is None or cache.target != target:
+                # New source, or it now points elsewhere: start with no commands.
+                cache = mongo.SampleCache(self.settings.collector_sample_cache_size, target)
+                self.samples[source.id] = cache
+            result, cursor = await mongo.collect_mongo(
+                session,
+                source,
+                state.snapshot_at,
+                state.profile_cursor,
+                client,
+                self.mongo,
+                cache,
+                self.settings,
+                now,
+            )
+            state.profile_cursor = cursor
+            explain = next((c for c in source.capabilities if c.feature == "explain"), None)
+            if explain is not None and explain.available:
+                full = _due(state.last_plan_capture_at, self.settings.collector_plan_seconds, now)
+                await mongo.capture_plans(
+                    session, source, full, client, self.mongo, cache, self.settings, now
+                )
+                if full:
+                    state.last_plan_capture_at = now
+        finally:
+            await client.close()
+
+        state.snapshot_at = now
+        if result.overflowed:
+            state.last_profile_overflow_at = now
+        self._record_success(source, state, now)
+        logger.info(
+            "collector: source=%s observations=%d profiler_read=%s",
+            source.name,
+            result.observations,
+            result.profiler_read,
+        )
+        return CycleOutcome(ok=True, observations=result.observations)
+
+    @staticmethod
+    def _record_success(source: DataSource, state: CollectorState, now: datetime) -> None:
+        state.consecutive_failures = 0
+        state.last_success_at = now
+        state.last_error = None
+        source.last_error = None
+        all_available = all(c.available for c in source.capabilities)
+        source.status = (
+            SourceStatus.HEALTHY
+            if all_available and not source_warnings(state, source.engine.value, now)
+            else SourceStatus.DEGRADED
+        )
 
     async def _store(
         self,
@@ -238,8 +340,11 @@ class Collector:
             StatementKey(r.dbid, r.userid, r.queryid, r.toplevel): r.query
             for r in reading.statements
         }
+        # Matching on queryid selects PostgreSQL rows only, whose identity columns are set.
         existing = {
-            StatementKey(f.dbid, f.userid, f.queryid, f.toplevel): f
+            StatementKey(
+                int(f.dbid or 0), int(f.userid or 0), int(f.queryid or 0), bool(f.toplevel)
+            ): f
             for f in await session.scalars(
                 select(Fingerprint).where(
                     Fingerprint.source_id == source.id,
@@ -353,6 +458,7 @@ class Collector:
             for statement in (
                 delete(Observation).where(Observation.interval_end < cutoff),
                 delete(RelationStat).where(RelationStat.captured_at < cutoff),
+                delete(ServerSample).where(ServerSample.captured_at < cutoff),
                 # A plan still being re-checked keeps a recent checked_at, so it stays.
                 delete(Plan).where(Plan.checked_at < cutoff),
             ):

@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from query_pulse.adapters import AdapterError, ConnectionParams, ErrorCode, ProbeResult, adapter_for
 from query_pulse.collector.models import CollectorState
-from query_pulse.collector.warnings import eviction_warning
+from query_pulse.collector.warnings import source_warnings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import utcnow
 from query_pulse.sources.models import DataSource, SourceCapability, SourceStatus
@@ -90,7 +90,9 @@ async def reset_baseline(session: AsyncSession, source_id: int) -> None:
     await session.execute(
         update(CollectorState)
         .where(CollectorState.source_id == source_id)
-        .values(snapshot=None, snapshot_at=None, stats_reset=None, dealloc=None)
+        .values(
+            snapshot=None, snapshot_at=None, stats_reset=None, dealloc=None, profile_cursor=None
+        )
     )
 
 
@@ -223,17 +225,19 @@ def to_out(source: DataSource) -> SourceOut:
         created_at=source.created_at,
         updated_at=source.updated_at,
         last_collected_at=state.last_success_at if (state := source.collector_state) else None,
-        warnings=[w] if (w := eviction_warning(source.collector_state)) else [],
+        warnings=source_warnings(source.collector_state, source.engine.value),
+        capability_gaps=[_capability_out(c) for c in source.capabilities if not c.available],
+    )
+
+
+def _capability_out(c: SourceCapability) -> CapabilityOut:
+    return CapabilityOut(
+        feature=c.feature, label=c.label, available=c.available, reason=c.reason, fix=c.fix
     )
 
 
 def to_detail(source: DataSource) -> SourceDetail:
     return SourceDetail(
         **to_out(source).model_dump(),
-        capabilities=[
-            CapabilityOut(
-                feature=c.feature, label=c.label, available=c.available, reason=c.reason, fix=c.fix
-            )
-            for c in source.capabilities
-        ],
+        capabilities=[_capability_out(c) for c in source.capabilities],
     )

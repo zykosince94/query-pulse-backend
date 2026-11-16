@@ -485,7 +485,10 @@ def test_plan_states(login: Callable[[str], TestClient], maker: Maker) -> None:
 
     mongo = add_source(maker, "Mongo", engine=SourceEngine.MONGODB, plans_ok=None)
     op_mongo = add_operation(maker, mongo, "{find: ?}", [(ago(1), 1, 1.0)])
-    assert client.get(f"/api/operations/{op_mongo}/plan").json()["status"] == "unavailable"
+    # MongoDB plans come from the collector (no on-demand capture): none yet, and why.
+    body = client.get(f"/api/operations/{op_mongo}/plan").json()
+    assert body["status"] == "not_captured" and body["engine"] == "mongodb"
+    assert "profiler" in body["reason"]
 
 
 def test_unchanged_plan_is_rechecked_not_duplicated(maker: Maker) -> None:

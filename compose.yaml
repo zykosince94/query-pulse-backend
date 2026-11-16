@@ -110,7 +110,7 @@ services:
       mongo:
         condition: service_healthy
 
-  # Polls every enabled PostgreSQL source (one instance only). Starts after the API, which
+  # Polls every enabled source, PostgreSQL and MongoDB (one instance only). Starts after the API, which
   # runs the migrations.
   collector:
     image: query-pulse-backend:local
@@ -134,7 +134,8 @@ services:
       start_period: 20s
       retries: 3
 
-  # Seeds the demo database (once) and then runs the planted-problem workload forever.
+  # Seeds the demo databases (once) and then runs the planted-problem workloads forever:
+  # P1-P4 on PostgreSQL, M1-M3 on MongoDB (whose profiler the seed turns on, as a user would).
   demo-workload:
     image: query-pulse-backend:local
     command:
@@ -148,8 +149,14 @@ services:
       QP_DEMO_CUSTOMERS: ${QP_DEMO_CUSTOMERS:-20000}
       QP_DEMO_PRODUCTS: ${QP_DEMO_PRODUCTS:-5000}
       QP_DEMO_ORDERS: ${QP_DEMO_ORDERS:-200000}
+      QP_DEMO_MONGO_URL: mongodb://mongo:27017/?directConnection=true
+      QP_DEMO_MONGO_RATE: ${QP_DEMO_MONGO_RATE:-10}
+      QP_DEMO_MONGO_ORDERS: ${QP_DEMO_MONGO_ORDERS:-50000}
+      QP_DEMO_MONGO_PRODUCTS: ${QP_DEMO_MONGO_PRODUCTS:-20000}
     depends_on:
       demo-postgres:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
       app:
         condition: service_healthy  # the image is built for `app`

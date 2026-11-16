@@ -26,7 +26,7 @@ from query_pulse.log import configure_logging
 from query_pulse.sources.router import router as sources_router
 from query_pulse.workload.router import router as workload_router
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

@@ -40,6 +40,7 @@ from query_pulse.findings.rules import (
     TableFacts,
     run_rules,
 )
+from query_pulse.workload import mongo_plan
 from query_pulse.workload.models import Fingerprint, Observation, Plan, RelationStat
 from query_pulse.workload.plan_tree import PlanFormatError, parse_plan
 from query_pulse.workload.service import as_utc
@@ -71,24 +72,39 @@ async def build_context(
     total = func.sum(Observation.total_exec_time_ms)
     rows = list(
         await session.execute(
-            select(Fingerprint.id, Fingerprint.query, calls, total)
+            select(
+                Fingerprint.id,
+                Fingerprint.query,
+                Fingerprint.engine,
+                Fingerprint.namespace,
+                calls.label("calls"),
+                total.label("total"),
+                func.sum(Observation.rows).label("rows"),
+                func.sum(Observation.keys_examined).label("keys"),
+                func.sum(Observation.docs_examined).label("docs"),
+            )
             .join(Observation, Observation.fingerprint_id == Fingerprint.id)
             .where(
                 Observation.source_id == source_id,
                 Observation.interval_end > start,
                 Observation.interval_end <= now,
             )
-            .group_by(Fingerprint.id, Fingerprint.query)
+            .group_by(Fingerprint.id, Fingerprint.query, Fingerprint.engine, Fingerprint.namespace)
         )
     )
-    source_total = sum(float(r[3] or 0.0) for r in rows)
+    source_total = sum(float(r.total or 0.0) for r in rows)
     ctx.operations = [
         OperationFacts(
-            fingerprint_id=r[0],
-            query=r[1],
-            calls=int(r[2] or 0),
-            total_exec_time_ms=float(r[3] or 0.0),
-            share_of_total_time=float(r[3] or 0.0) / source_total if source_total else 0.0,
+            fingerprint_id=r.id,
+            query=r.query,
+            calls=int(r.calls or 0),
+            total_exec_time_ms=float(r.total or 0.0),
+            share_of_total_time=float(r.total or 0.0) / source_total if source_total else 0.0,
+            engine=r.engine,
+            namespace=r.namespace,
+            rows=int(r.rows or 0),
+            keys_examined=None if r.keys is None else int(r.keys),
+            docs_examined=None if r.docs is None else int(r.docs),
         )
         for r in rows
     ]
@@ -103,13 +119,21 @@ async def build_context(
             .group_by(Plan.fingerprint_id)
         )
         for plan in await session.scalars(select(Plan).where(Plan.id.in_(latest))):
+            checked_at = as_utc(plan.checked_at)
             try:
-                root = parse_plan(plan.plan)
-            except PlanFormatError:
+                if plan.engine == "mongodb":
+                    ctx.plans[plan.fingerprint_id] = PlanFacts(
+                        plan_id=plan.id,
+                        root=None,
+                        stage_root=mongo_plan.parse_plan(plan.plan),
+                        checked_at=checked_at,
+                    )
+                else:
+                    ctx.plans[plan.fingerprint_id] = PlanFacts(
+                        plan_id=plan.id, root=parse_plan(plan.plan), checked_at=checked_at
+                    )
+            except (PlanFormatError, mongo_plan.MongoPlanFormatError):
                 continue
-            ctx.plans[plan.fingerprint_id] = PlanFacts(
-                plan_id=plan.id, root=root, checked_at=as_utc(plan.checked_at)
-            )
 
     # Tables: the latest sample of each.
     latest_table = (

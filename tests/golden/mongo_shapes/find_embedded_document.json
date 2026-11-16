@@ -1,0 +1,23 @@
+{
+  "description": "An exact embedded-document match keeps its field names.",
+  "op": "query",
+  "ns": "shop.customers",
+  "command": {
+    "find": "customers",
+    "filter": {
+      "address": {
+        "city": "Pune",
+        "zip": "411001"
+      }
+    }
+  },
+  "shape": {
+    "find": "customers",
+    "filter": {
+      "address": {
+        "city": "?",
+        "zip": "?"
+      }
+    }
+  }
+}

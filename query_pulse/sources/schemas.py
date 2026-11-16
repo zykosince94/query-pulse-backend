@@ -117,6 +117,9 @@ class SourceOut(BaseModel):
     # makes the results incomplete (e.g. pg_stat_statements evicting statements).
     last_collected_at: datetime | None = None
     warnings: list[str] = []
+    # Capabilities that aren't available, with their fix, so lists can explain gaps (e.g. a
+    # MongoDB source with profiling off) without loading every source's detail.
+    capability_gaps: list[CapabilityOut] = []
 
 
 class SourceDetail(SourceOut):

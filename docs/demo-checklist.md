@@ -3,7 +3,7 @@
 The scripted demo. Run it by hand, step by step, before tagging every release, on a machine
 that starts from a fresh clone. Tick each step; if one fails, file an issue and don't tag.
 
-*Covers releases up to v0.5.0 (Phases 1–5).*
+*Covers releases up to v0.6.0 (Phases 1–6).*
 
 ## 0. Fresh start
 
@@ -32,8 +32,11 @@ that starts from a fresh clone. Tick each step; if one fails, file an issue and 
       password shows as "Saved (encrypted)".
 - [ ] Change the password to `wrong` and test: a clear authentication error appears within a few
       seconds, and nothing is saved.
-- [ ] Add MongoDB: host `mongo`, port `27017`, database `shop`, no credentials. The checklist
-      shows the profiler as unavailable, with the exact command to enable it.
+- [ ] Add MongoDB with database `inventory` (host `mongo`, port `27017`, no credentials), and
+      test only: the checklist shows the profiler as unavailable on `inventory`, with the exact
+      command to enable it. (The demo seed turned profiling on for `shop` only.)
+- [ ] Add MongoDB for real: name `Demo MongoDB`, host `mongo`, port `27017`, database `shop`, no
+      credentials. Every capability is available (server metrics, plans, profiler); save: Healthy.
 
 ## 3. Collection (Phase 3)
 
@@ -51,7 +54,8 @@ Wait two or three minutes after adding the source, so several cycles have been c
       total time, and row 2 is the "latest orders" sort (P2).
 - [ ] Change the range to **Last 15 minutes**: P1 is still first.
 - [ ] Rank by **Calls**: the primary-key lookups (controls C1/C2) move to the top.
-- [ ] Type `orders` in "Statement contains" and press Enter: only statements on `orders` remain.
+- [ ] Type `orders` in "Statement or shape contains" and press Enter: only operations on
+      `orders` remain.
 - [ ] **Lock range**, then **Copy link**. Open the link in a private window and sign in: the same
       range (as dates), ranking, filter and rows appear.
 - [ ] Back on the home page, click P1. The detail page shows its statement, total time with its
@@ -66,8 +70,9 @@ Wait two or three minutes after adding the source, so several cycles have been c
 
 About three minutes after adding the source (P4 needs two minutes of index samples):
 
-- [ ] The sidebar's **Findings** link shows **4**.
-- [ ] Findings → Open lists exactly four, one per planted problem:
+- [ ] The sidebar's **Findings** link counts every open finding (4 for PostgreSQL, 7 once
+      MongoDB's three arrive).
+- [ ] Findings → Open, source **Demo PostgreSQL**, lists exactly four, one per planted problem:
       **PG-SEQSCAN-HOT** on the `customer_id` lookup (P1), **PG-SORT-NO-INDEX** on "latest
       orders" (P2), **PG-LEADING-WILDCARD** on the product search (P3, medium confidence, saying
       the pattern itself isn't recorded) and **PG-UNUSED-INDEX** on
@@ -84,7 +89,38 @@ About three minutes after adding the source (P4 needs two minutes of index sampl
 - [ ] Rule filter **PG-UNUSED-INDEX** shows one finding, and the URL keeps the filter.
 - [ ] As the demo user: findings are visible, with no status buttons.
 
-## 6. Hardening
+## 6. MongoDB (QP-AC-22 to QP-AC-25)
+
+A minute or two after adding Demo MongoDB:
+
+- [ ] The health strip's Demo MongoDB card counts **profiled operations** and has a sparkline.
+- [ ] The explorer (all sources) mixes both engines, each row with its engine badge. Filter to
+      Demo MongoDB: seven shapes, each compact JSON with every value as `?` (QP-AC-22: the
+      thousands of `customerId` lookups, each with a different value, are one row), with the
+      collection under it. `{"find": "orders", "filter": {"customerId": "?"}}` (M1) is first.
+- [ ] Open M1: titled **Query shape**, the shape indented, "find on shop.orders", operations,
+      documents returned and **examined per returned** (about 20,000). The plan viewer shows a
+      **COLLSCAN** flagged "Reads the whole collection" with `{"customerId": {"$eq": "?"}}`,
+      and no capture button. Back to the explorer, open P1: its own PostgreSQL plan viewer
+      (QP-AC-25).
+- [ ] Findings, source Demo MongoDB: exactly three (QP-AC-23). **MDB-COLLSCAN** on M1 and
+      **MDB-BLOCKING-SORT** on the `placedAt` sort (both "Plan evidence"), and
+      **MDB-EXAMINED-RATIO** on the `sku` `$regex` ("Statistics heuristic", high confidence,
+      saying the regex isn't anchored). None for the four controls. The sidebar badge is **7**.
+- [ ] The M1 and M2 cards suggest a mongosh `createIndex` command ("Copy the mongosh command").
+- [ ] On the M3 card, the **Plan #… IXSCAN using sku_1** link opens the plan with the IXSCAN
+      outlined, flagged "Scans the whole index", bounds `["", {}), ?`.
+- [ ] The Demo MongoDB source page shows the **Server** panel: uptime, primary, connections,
+      cache, and operations per second.
+- [ ] Profiling off (QP-AC-24): add a source for database `inventory` (or run
+      `db.getSiblingDB("shop").setProfilingLevel(0)` in `docker compose exec mongo mongosh`).
+      Filter the explorer to it: a notice says its operations aren't collected, why, and the
+      fix with Copy, instead of an empty list. Turn profiling back on with
+      `setProfilingLevel(1, { slowms: 0 })` if you turned it off; delete the extra source.
+- [ ] No values stored (ADR 0010): open any MongoDB plan's "Stored plan (redacted explain
+      JSON)": filters and bounds show `?`, never a customer id or sku.
+
+## 7. Hardening
 
 - [ ] A cross-site write is refused:
       `curl -i -X POST http://127.0.0.1:8000/api/auth/login -H 'Origin: https://evil.example' -H 'content-type: application/json' -d '{"username":"admin","password":"admin-demo-password"}'`
@@ -94,13 +130,15 @@ About three minutes after adding the source (P4 needs two minutes of index sampl
 - [ ] Every API response has an `X-Request-ID` header, and the app logs show that ID on the
       request's access line.
 
-## 7. Resilience (spot checks)
+## 8. Resilience (spot checks)
 
 - [ ] `docker compose stop demo-postgres`: within a couple of cycles the source turns Failing
       with a clear error. `docker compose start demo-postgres`: it recovers on its own.
 - [ ] `docker compose restart collector`: collection continues with no gap or spike in the charts.
+      MongoDB shapes keep their plans; a plan is captured again only once its shape is profiled
+      again (the commands lived in memory).
 
-## 8. Wrap up
+## 9. Wrap up
 
 - [ ] Screenshots of new screens at desktop width and 375 px, in light and dark mode.
 - [ ] `docker compose down -v`.

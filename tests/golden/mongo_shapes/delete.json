@@ -1,0 +1,26 @@
+{
+  "description": "A delete statement (op remove): its filter, and limit (0 = all, 1 = one) as structure.",
+  "op": "remove",
+  "ns": "shop.orders",
+  "command": {
+    "q": {
+      "status": "cancelled",
+      "placedAt": {
+        "$lt": {
+          "$date": "2025-01-01T00:00:00Z"
+        }
+      }
+    },
+    "limit": 0
+  },
+  "shape": {
+    "delete": "orders",
+    "q": {
+      "status": "?",
+      "placedAt": {
+        "$lt": "?"
+      }
+    },
+    "limit": 0
+  }
+}

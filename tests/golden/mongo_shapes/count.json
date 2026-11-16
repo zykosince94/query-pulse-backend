@@ -1,0 +1,37 @@
+{
+  "description": "count keeps its query filter.",
+  "op": "command",
+  "ns": "shop.orders",
+  "command": {
+    "count": "orders",
+    "query": {
+      "status": "cancelled"
+    },
+    "lsid": {
+      "id": {
+        "$binary": {
+          "base64": "fSngGRCSRCeU+ejAH+illg==",
+          "subType": "04"
+        }
+      }
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1794826806,
+          "i": 5014
+        }
+      }
+    },
+    "$readPreference": {
+      "mode": "primaryPreferred"
+    },
+    "$db": "shop"
+  },
+  "shape": {
+    "count": "orders",
+    "query": {
+      "status": "?"
+    }
+  }
+}

@@ -44,6 +44,13 @@ class CollectorState(Base):
     # Last time the findings rules were evaluated for this source.
     last_rules_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # MongoDB: profiler entries up to this server time have been read (the next cycle reads
+    # after it). None until the first cycle sets the starting point.
+    profile_cursor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # MongoDB: when the capped system.profile collection last overwrote entries before the
+    # collector read them, so some operations weren't counted.
+    last_profile_overflow_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
 
 class CollectorHeartbeat(Base):
     """A single row the running collector updates, so the API can tell whether it's alive."""

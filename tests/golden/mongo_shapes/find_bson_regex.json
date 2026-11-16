@@ -1,0 +1,22 @@
+{
+  "description": "A BSON regular expression literal is a value too.",
+  "op": "query",
+  "ns": "shop.products",
+  "command": {
+    "find": "products",
+    "filter": {
+      "name": {
+        "$regularExpression": {
+          "pattern": "^lamp",
+          "options": ""
+        }
+      }
+    }
+  },
+  "shape": {
+    "find": "products",
+    "filter": {
+      "name": "?"
+    }
+  }
+}

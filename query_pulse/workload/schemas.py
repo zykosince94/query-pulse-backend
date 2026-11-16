@@ -33,6 +33,23 @@ class SourceHealth(BaseModel):
     points: list[TrendPoint]
 
 
+class ServerMetrics(BaseModel):
+    """A MongoDB server's latest serverStatus sample, with operation rates since the one
+    before it (None when there's no earlier sample, or the server restarted in between)."""
+
+    source_id: int
+    captured_at: datetime
+    uptime_seconds: float
+    connections_current: int | None
+    connections_available: int | None
+    cache_bytes: int | None
+    cache_max_bytes: int | None
+    repl_state: str | None
+    opcounters: dict[str, int]
+    rates_per_second: dict[str, float] | None
+    rate_seconds: float | None
+
+
 # --- workload explorer (Phase 4) -------------------------------------------------------------
 
 SortKey = Literal["total_time", "mean_time", "calls"]
@@ -52,6 +69,10 @@ class OperationMetrics(BaseModel):
     rows: int
     shared_blks_hit: int
     shared_blks_read: int
+    # MongoDB only (from the profiler): index keys and documents read to answer the
+    # operations. None for PostgreSQL, which reports buffers instead.
+    keys_examined: int | None = None
+    docs_examined: int | None = None
 
 
 class OperationSummary(OperationMetrics):
@@ -61,7 +82,11 @@ class OperationSummary(OperationMetrics):
     source_id: int
     source_name: str
     engine: SourceEngine
+    # PostgreSQL: the normalised statement. MongoDB: the query shape as JSON (values are "?").
     query: str
+    # MongoDB only: the collection ("shop.orders") and the command (find, aggregate, ...).
+    namespace: str | None = None
+    command: str | None = None
     # This operation's share of the window's total execution time (0..1), on its source(s).
     share_of_total_time: float
     first_seen_at: datetime
@@ -124,8 +149,32 @@ class PlanNode(BaseModel):
     children: list[PlanNode] = []
 
 
+class MongoPlanStage(BaseModel):
+    """One stage of a MongoDB winning plan (explain at queryPlanner verbosity, redacted).
+
+    Values from the query are "?" (filters) or dropped; index bounds keep only full ranges.
+    """
+
+    path: str
+    stage: str
+    index_name: str | None = None
+    key_pattern: str | None = None
+    sort_pattern: str | None = None
+    direction: str | None = None
+    filter: str | None = None
+    index_bounds: dict[str, list[str]] = {}
+    # Every bounded field includes a full range: the scan reads the whole index.
+    full_index_scan: bool = False
+    is_multi_key: bool | None = None
+    details: dict[str, str] = {}
+    children: list[MongoPlanStage] = []
+
+
 class OperationPlan(BaseModel):
-    """The latest generic plan for an operation, or why there isn't one.
+    """The latest plan for an operation, or why there isn't one.
+
+    PostgreSQL plans come from EXPLAIN (GENERIC_PLAN) and fill `root`; MongoDB plans come
+    from explain at queryPlanner verbosity and fill `stage_root`.
 
     - captured: `root` and `raw` hold the plan.
     - failed: EXPLAIN was tried and `reason` says why it gave no plan.
@@ -134,6 +183,7 @@ class OperationPlan(BaseModel):
     """
 
     operation_id: int
+    engine: SourceEngine = SourceEngine.POSTGRES
     status: PlanStatus
     plan_id: int | None = None
     captured_at: datetime | None = None
@@ -141,4 +191,9 @@ class OperationPlan(BaseModel):
     reason: str | None = None
     fix: str | None = None
     root: PlanNode | None = None
+    stage_root: MongoPlanStage | None = None
+    # MongoDB: how many candidate plans lost to the winning one, and the aggregation stages
+    # that run after the query engine.
+    rejected_plans: int = 0
+    pipeline_stages: list[str] = []
     raw: list[Any] | None = None

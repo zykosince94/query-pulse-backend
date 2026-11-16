@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # so it gets at most a third of it.
     collector_plan_seconds: float = Field(default=300.0, gt=0)
     collector_plan_top_n: int = Field(default=20, ge=1, le=200)
+    # MongoDB: at most this many profiler entries are read per cycle (the rest wait for the
+    # next one), and the newest command of at most this many read shapes per source is held
+    # in collector memory for explain (never stored; ADR 0010).
+    collector_profile_max_entries: int = Field(default=10_000, ge=100, le=1_000_000)
+    collector_sample_cache_size: int = Field(default=500, ge=10, le=100_000)
 
     # Findings: how often each source's rules run (after a collection cycle), and over what.
     rules_interval_seconds: float = Field(default=60.0, gt=0)

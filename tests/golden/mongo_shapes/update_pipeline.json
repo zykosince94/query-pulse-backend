@@ -1,0 +1,42 @@
+{
+  "description": "An update with an aggregation pipeline is normalised like a pipeline.",
+  "op": "update",
+  "ns": "shop.orders",
+  "command": {
+    "q": {
+      "status": "paid"
+    },
+    "u": [
+      {
+        "$set": {
+          "total": {
+            "$round": [
+              "$total",
+              2
+            ]
+          }
+        }
+      }
+    ],
+    "multi": true
+  },
+  "shape": {
+    "update": "orders",
+    "q": {
+      "status": "?"
+    },
+    "u": [
+      {
+        "$set": {
+          "total": {
+            "$round": [
+              "$total",
+              "?"
+            ]
+          }
+        }
+      }
+    ],
+    "multi": true
+  }
+}

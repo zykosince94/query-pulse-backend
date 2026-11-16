@@ -7,6 +7,8 @@ request carries it without being passed around, and it's echoed back in the resp
 
 Secrets never reach a log line: credentials are decrypted only in the service layer and
 never formatted into messages (the marker-secret test, QP-AC-08, checks every record).
+Neither do monitored databases' query values (ADR 0010): PyMongo's command logging, which
+would print profiler entries, is held at WARNING.
 """
 
 from __future__ import annotations
@@ -96,3 +98,7 @@ def configure_logging(log_format: Literal["json", "text"] = "json", level: str =
     access = logging.getLogger("uvicorn.access")
     access.handlers.clear()
     access.propagate = False
+    # PyMongo's debug loggers write whole commands and replies, and a monitored MongoDB's
+    # profiler entries carry real query values (ADR 0010). Never below WARNING, whatever
+    # QP_LOG_LEVEL says.
+    logging.getLogger("pymongo").setLevel(logging.WARNING)

@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from query_pulse.sources.models import SourceEngine
+
 FindingStatusName = Literal["open", "resolved", "dismissed"]
 
 
@@ -44,6 +46,7 @@ class FindingOut(BaseModel):
     id: int
     source_id: int
     source_name: str
+    engine: SourceEngine
     rule_id: str
     rule_title: str
     target_kind: Literal["operation", "index"]
@@ -58,7 +61,8 @@ class FindingOut(BaseModel):
     # "plan": strong evidence from a captured plan; "statistics": a heuristic from counters.
     evidence_strength: Literal["plan", "statistics"]
     suggested_action: str
-    # SQL to review and run by hand. Query Pulse never executes it.
+    # To review and run by hand: SQL for PostgreSQL, a mongosh command for MongoDB. Query
+    # Pulse never executes it.
     action_sql: str | None
     facts: list[FindingFact]
     evidence: list[EvidenceOut]

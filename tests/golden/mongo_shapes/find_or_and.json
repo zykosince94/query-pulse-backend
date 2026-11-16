@@ -1,0 +1,53 @@
+{
+  "description": "Logical operators keep their branches; each branch is a filter.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "$or": [
+        {
+          "status": "paid"
+        },
+        {
+          "$and": [
+            {
+              "total": {
+                "$gt": 10
+              }
+            },
+            {
+              "total": {
+                "$lte": 99.5
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "$or": [
+        {
+          "status": "?"
+        },
+        {
+          "$and": [
+            {
+              "total": {
+                "$gt": "?"
+              }
+            },
+            {
+              "total": {
+                "$lte": "?"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -105,7 +105,7 @@ def add_source(sessionmaker: Maker, **overrides: Any) -> int:
         async with sessionmaker() as session:
             source = DataSource(
                 name=overrides.pop("name", "Orders DB"),
-                engine=SourceEngine.POSTGRES,
+                engine=overrides.pop("engine", SourceEngine.POSTGRES),
                 host="db.example",
                 port=5432,
                 database="shop",
@@ -132,6 +132,7 @@ class ScriptedCollector:
     def __init__(self, failures: int) -> None:
         self.failures = failures
         self.calls = 0
+        self.samples: dict[int, object] = {}
 
     async def collect(self, source_id: int) -> CycleOutcome:
         self.calls += 1
@@ -158,6 +159,7 @@ def test_source_loop_keeps_going_after_failures_and_recovers(settings: Settings)
 
 def test_reconcile_starts_and_stops_tasks(settings: Settings, sessionmaker: Maker) -> None:
     first = add_source(sessionmaker, name="First")
+    mongo = add_source(sessionmaker, name="Mongo", engine=SourceEngine.MONGODB)
     add_source(sessionmaker, name="Disabled", enabled=False)
 
     async def scenario() -> tuple[set[int], set[int]]:
@@ -165,9 +167,10 @@ def test_reconcile_starts_and_stops_tasks(settings: Settings, sessionmaker: Make
         await supervisor.reconcile()
         started = set(supervisor.tasks)
         async with sessionmaker() as session:
-            source = await session.get(DataSource, first)
-            assert source is not None
-            source.enabled = False
+            for source_id in (first, mongo):
+                source = await session.get(DataSource, source_id)
+                assert source is not None
+                source.enabled = False
             await session.commit()
         await supervisor.reconcile()
         remaining = set(supervisor.tasks)
@@ -176,7 +179,7 @@ def test_reconcile_starts_and_stops_tasks(settings: Settings, sessionmaker: Make
         return started, remaining
 
     started, remaining = asyncio.run(scenario())
-    assert started == {first}
+    assert started == {first, mongo}  # both engines are collected (Phase 6)
     assert remaining == set()
 
 

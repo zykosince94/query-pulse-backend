@@ -36,10 +36,12 @@ from query_pulse.findings.rules import (
     run_rules,
 )
 from query_pulse.sources.models import DataSource, SourceEngine, SourceStatus
+from query_pulse.workload import mongo_plan
 from query_pulse.workload.models import Fingerprint, Observation, Plan, RelationStat
 from query_pulse.workload.plan_tree import parse_plan
 
 FIXTURES = Path(__file__).parent / "fixtures" / "plans"
+MONGO_FIXTURES = Path(__file__).parent / "fixtures" / "mongo_plans"
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=UTC)
 Maker = async_sessionmaker[AsyncSession]
 
@@ -306,6 +308,49 @@ def test_demo_workload_gives_exactly_one_finding_per_planted_problem() -> None:
         ("PG-UNUSED-INDEX", "index:public.idx_orders_legacy_lookup"),
     ]
 
+    # Every rule at once (Phase 6): the MongoDB problems M1-M3 and their controls alongside,
+    # still one finding per planted problem. Neither engine's rules read the other's plans.
+    def mongo_op(fid: int, docs: int, keys: int, returned: int, query: str = "q") -> OperationFacts:
+        return OperationFacts(
+            fid, query, 500, 100.0, 0.1, "mongodb", "shop.orders", returned, keys, docs
+        )
+
+    regex = '{"find": "products", "filter": {"sku": {"$regex": "?"}}}'
+    ctx.operations += [
+        mongo_op(21, 500 * 50_000, 0, 2_000),
+        mongo_op(22, 500 * 50_000, 0, 10_000),
+        mongo_op(23, 500, 500 * 20_000, 500, regex),
+        mongo_op(31, 500, 500, 500),
+        mongo_op(32, 500, 500, 500),
+        mongo_op(33, 10_000, 10_000, 10_000),
+        mongo_op(34, 5_000, 5_010, 5_000, regex),
+    ]
+    for fid, name in (
+        (21, "collscan_customer"),
+        (22, "sort_no_index"),
+        (23, "regex_unanchored"),
+        (31, "id_lookup"),
+        (32, "ixscan_equality"),
+        (33, "sort_by_id_index"),
+        (34, "regex_anchored"),
+    ):
+        ctx.plans[fid] = mongo_plan_facts(name, fid)
+    assert fired(ctx) == [
+        ("MDB-BLOCKING-SORT", "operation:22"),
+        ("MDB-COLLSCAN", "operation:21"),
+        ("MDB-EXAMINED-RATIO", "operation:23"),
+        ("PG-LEADING-WILDCARD", "operation:3"),
+        ("PG-SEQSCAN-HOT", "operation:1"),
+        ("PG-SORT-NO-INDEX", "operation:2"),
+        ("PG-UNUSED-INDEX", "index:public.idx_orders_legacy_lookup"),
+    ]
+
+
+def mongo_plan_facts(name: str, plan_id: int) -> PlanFacts:
+    explain = json.loads((MONGO_FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
+    stage_root = mongo_plan.parse_plan([mongo_plan.redact(explain)])
+    return PlanFacts(plan_id=plan_id, root=None, stage_root=stage_root, checked_at=NOW)
+
 
 def test_every_rule_is_declared_with_its_evidence_kind() -> None:
     assert set(RULES_BY_ID) == {
@@ -313,11 +358,15 @@ def test_every_rule_is_declared_with_its_evidence_kind() -> None:
         "PG-SORT-NO-INDEX",
         "PG-LEADING-WILDCARD",
         "PG-UNUSED-INDEX",
+        "MDB-COLLSCAN",
+        "MDB-BLOCKING-SORT",
+        "MDB-EXAMINED-RATIO",
     }
-    assert RULES_BY_ID["PG-UNUSED-INDEX"].evidence_strength == "statistics"
-    assert {r.evidence_strength for r in RULES_BY_ID.values() if r.id != "PG-UNUSED-INDEX"} == {
-        "plan"
-    }
+    statistics = {"PG-UNUSED-INDEX", "MDB-EXAMINED-RATIO"}
+    assert {r.id for r in RULES_BY_ID.values() if r.evidence_strength == "statistics"} == (
+        statistics
+    )
+    assert {r.evidence_strength for r in RULES_BY_ID.values() if r.id not in statistics} == {"plan"}
 
 
 # --- the engine against the app database -----------------------------------------------------
@@ -625,6 +674,9 @@ def test_rule_catalogue(login: Callable[[str], TestClient]) -> None:
         "PG-SORT-NO-INDEX",
         "PG-LEADING-WILDCARD",
         "PG-UNUSED-INDEX",
+        "MDB-COLLSCAN",
+        "MDB-BLOCKING-SORT",
+        "MDB-EXAMINED-RATIO",
     ]
     assert rules[0]["thresholds"]["min_share_of_total_time"] == 0.1
 

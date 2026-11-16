@@ -1,0 +1,17 @@
+{
+  "description": "In a plain filter a string starting with $ is a literal value, not a field path.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "coupon": "$SAVE10"
+    }
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "coupon": "?"
+    }
+  }
+}

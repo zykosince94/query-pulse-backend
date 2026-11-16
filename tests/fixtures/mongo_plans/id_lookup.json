@@ -1,0 +1,34 @@
+{
+ "explainVersion": "1",
+ "queryPlanner": {
+  "namespace": "probe.orders",
+  "indexFilterSet": false,
+  "parsedQuery": {
+   "_id": {
+    "$eq": {
+     "$oid": "6afae23675b1e33959ac815d"
+    }
+   }
+  },
+  "queryHash": "869CED4F",
+  "planCacheKey": "333C0A17",
+  "optimizationTimeMillis": 0,
+  "maxIndexedOrSolutionsReached": false,
+  "maxIndexedAndSolutionsReached": false,
+  "maxScansToExplodeReached": false,
+  "winningPlan": {
+   "stage": "IDHACK"
+  },
+  "rejectedPlans": []
+ },
+ "command": {
+  "find": "orders",
+  "filter": {
+   "_id": {
+    "$oid": "6afae23675b1e33959ac815d"
+   }
+  },
+  "$db": "probe"
+ },
+ "ok": 1
+}

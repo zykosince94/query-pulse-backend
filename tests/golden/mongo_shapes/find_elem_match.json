@@ -1,0 +1,31 @@
+{
+  "description": "$elemMatch holds a sub-filter.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "items": {
+        "$elemMatch": {
+          "sku": "SKU-1",
+          "qty": {
+            "$gt": 2
+          }
+        }
+      }
+    }
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "items": {
+        "$elemMatch": {
+          "sku": "?",
+          "qty": {
+            "$gt": "?"
+          }
+        }
+      }
+    }
+  }
+}

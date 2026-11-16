@@ -1,0 +1,37 @@
+{
+  "description": "Inside $expr, \"$field\" strings are field paths (kept); other scalars are values.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {
+      "$expr": {
+        "$gt": [
+          "$total",
+          {
+            "$multiply": [
+              "$discount",
+              10
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {
+      "$expr": {
+        "$gt": [
+          "$total",
+          {
+            "$multiply": [
+              "$discount",
+              "?"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

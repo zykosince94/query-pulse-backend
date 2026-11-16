@@ -1,0 +1,30 @@
+{
+  "description": "An update statement as the profiler records it (op update): q, u and flags.",
+  "op": "update",
+  "ns": "shop.orders",
+  "command": {
+    "q": {
+      "orderNo": 5
+    },
+    "u": {
+      "$set": {
+        "status": "c"
+      }
+    },
+    "multi": false,
+    "upsert": false
+  },
+  "shape": {
+    "update": "orders",
+    "q": {
+      "orderNo": "?"
+    },
+    "u": {
+      "$set": {
+        "status": "?"
+      }
+    },
+    "multi": false,
+    "upsert": false
+  }
+}

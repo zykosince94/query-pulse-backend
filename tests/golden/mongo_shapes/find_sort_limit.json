@@ -1,0 +1,42 @@
+{
+  "description": "Sort directions are structure (kept); the limit is a value.",
+  "op": "query",
+  "ns": "shop.orders",
+  "command": {
+    "find": "orders",
+    "filter": {},
+    "sort": {
+      "placedAt": -1
+    },
+    "limit": 20,
+    "batchSize": 101,
+    "lsid": {
+      "id": {
+        "$binary": {
+          "base64": "fSngGRCSRCeU+ejAH+illg==",
+          "subType": "04"
+        }
+      }
+    },
+    "$clusterTime": {
+      "clusterTime": {
+        "$timestamp": {
+          "t": 1794826806,
+          "i": 5014
+        }
+      }
+    },
+    "$readPreference": {
+      "mode": "primaryPreferred"
+    },
+    "$db": "shop"
+  },
+  "shape": {
+    "find": "orders",
+    "filter": {},
+    "sort": {
+      "placedAt": -1
+    },
+    "limit": "?"
+  }
+}

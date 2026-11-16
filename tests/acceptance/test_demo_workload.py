@@ -1,15 +1,16 @@
 """Acceptance: the full stack under the demo workload.
 
 QP-AC-14 (P1 ranks first), QP-AC-15 end to end (P1's plan), QP-AC-18 (P1-P4 each produce
-exactly one open finding from their rule), QP-AC-19 (controls produce none) and QP-AC-20
-(every evidence link resolves).
+exactly one open finding from their rule), QP-AC-19 (controls produce none), QP-AC-20
+(every evidence link resolves), and for MongoDB QP-AC-23 (M1-M3 each produce their finding,
+controls none) and the API half of QP-AC-25 (both engines in one explorer).
 
 Runs over HTTP against a running stack (`make demo`), so it proves what a user would see:
 
     QP_ACCEPTANCE_URL=http://127.0.0.1:8000 uv run pytest tests/acceptance
 
-Skipped when QP_ACCEPTANCE_URL isn't set. The test registers the demo PostgreSQL as a source
-if it isn't already, then waits until the collector has seen every demo statement.
+Skipped when QP_ACCEPTANCE_URL isn't set. The tests register the demo PostgreSQL and MongoDB
+as sources if they aren't already, then wait until the collector has seen the workload.
 """
 
 from __future__ import annotations
@@ -193,3 +194,115 @@ def test_every_finding_evidence_link_resolves(api: httpx.Client, source_id: int)
             if item["kind"] == "plan":
                 cited = api.get(f"/api/plans/{item['plan_id']}").json()
                 assert cited["status"] == "captured" and cited["plan_id"] == item["plan_id"]
+
+
+# --- MongoDB (Phase 6) ---------------------------------------------------------------------------
+
+MONGO_SOURCE = {
+    "name": "Demo shop (MongoDB)",
+    "engine": "mongodb",
+    "host": "mongo",
+    "port": 27017,
+    "database": "shop",
+    "username": "",
+    "password": "",
+    "tls_mode": "disable",
+}
+M1 = '{"find": "orders", "filter": {"customerId": "?"}}'
+M2 = '{"find": "orders", "filter": {}, "sort": {"placedAt": -1}, "limit": "?"}'
+M3 = '{"find": "products", "filter": {"sku": {"$regex": "?"}}}'
+# Every shape the MongoDB workload runs: M1-M3 and controls MC1-MC4.
+MONGO_SHAPES = [
+    M1,
+    M2,
+    M3,
+    '{"find": "orders", "filter": {"_id": "?"}, "limit": "?"}',
+    '{"find": "orders", "filter": {"orderNo": "?"}, "limit": "?"}',
+    '{"find": "orders", "filter": {}, "sort": {"_id": -1}, "limit": "?"}',
+    '{"find": "products", "filter": {"sku": {"$regex": "?"}}, "limit": "?"}',
+]
+EXPECTED_MONGO_FINDINGS = {
+    "M1": ("MDB-COLLSCAN", M1),
+    "M2": ("MDB-BLOCKING-SORT", M2),
+    "M3": ("MDB-EXAMINED-RATIO", M3),
+}
+
+
+@pytest.fixture(scope="module")
+def mongo_source_id(api: httpx.Client) -> int:
+    for source in api.get("/api/sources").json():
+        if source["engine"] == "mongodb" and source["host"] == "mongo":
+            return int(source["id"])
+    response = api.post("/api/sources", json=MONGO_SOURCE)
+    assert response.status_code == 201, response.text
+    return int(response.json()["id"])
+
+
+def test_mongo_planted_problems_produce_exactly_one_finding_each_and_controls_none(
+    api: httpx.Client, mongo_source_id: int
+) -> None:
+    """QP-AC-23: M1, M2 and M3 each produce their expected finding; controls produce none."""
+    wait_for(
+        lambda: (
+            (ops := ranked(api, mongo_source_id))
+            and all(any(op["query"] == s for op in ops) for s in MONGO_SHAPES)
+        ),
+        "the collector to observe every MongoDB demo shape",
+    )
+    findings = wait_for(
+        lambda: (
+            (found := open_findings(api, mongo_source_id))
+            and all(
+                any(f["rule_id"] == rule and f["query"] == shape for f in found)
+                for rule, shape in EXPECTED_MONGO_FINDINGS.values()
+            )
+            and found
+        ),
+        "M1-M3 to produce their findings",
+    )
+    for problem, (rule, shape) in EXPECTED_MONGO_FINDINGS.items():
+        hits = [f for f in findings if f["rule_id"] == rule and f["query"] == shape]
+        assert len(hits) == 1, (problem, hits)
+        assert hits[0]["engine"] == "mongodb"
+    assert len(findings) == len(EXPECTED_MONGO_FINDINGS), [
+        (f["rule_id"], f["query"]) for f in findings
+    ]
+    # Plan evidence is labelled apart from statistics, like PostgreSQL's (M3 is statistics).
+    strength = {f["rule_id"]: f["evidence_strength"] for f in findings}
+    assert strength == {
+        "MDB-COLLSCAN": "plan",
+        "MDB-BLOCKING-SORT": "plan",
+        "MDB-EXAMINED-RATIO": "statistics",
+    }
+
+
+def test_both_engines_share_one_explorer_with_their_own_plans(
+    api: httpx.Client, source_id: int, mongo_source_id: int
+) -> None:
+    """QP-AC-25 (API half; the Playwright journey proves the screens): one ranked list holds
+    PostgreSQL and MongoDB operations, and each opens its own kind of plan."""
+
+    def both_engines() -> list[dict[str, Any]] | None:
+        response = api.get("/api/operations", params={"minutes": 15, "limit": 200})
+        operations: list[dict[str, Any]] = response.json()["operations"]
+        engines = {op["engine"] for op in operations}
+        return operations if engines >= {"postgres", "mongodb"} else None
+
+    operations = wait_for(both_engines, "operations from both engines in one list")
+    m1 = next(op for op in operations if op["query"] == M1)
+    assert (m1["engine"], m1["namespace"], m1["command"]) == ("mongodb", "shop.orders", "find")
+    assert m1["docs_examined"] > 0 and m1["keys_examined"] == 0
+    p1 = next(op for op in operations if P1 in op["query"])
+    assert p1["engine"] == "postgres" and p1["docs_examined"] is None
+
+    mongo_plan = wait_for(
+        lambda: (
+            (body := api.get(f"/api/operations/{m1['id']}/plan").json())["status"] == "captured"
+            and body
+        ),
+        "M1's plan",
+    )
+    assert mongo_plan["engine"] == "mongodb" and mongo_plan["root"] is None
+    assert mongo_plan["stage_root"]["stage"] == "COLLSCAN"
+    pg_plan = api.get(f"/api/operations/{p1['id']}/plan").json()
+    assert pg_plan["engine"] == "postgres" and pg_plan["stage_root"] is None

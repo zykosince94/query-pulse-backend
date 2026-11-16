@@ -14,6 +14,13 @@ Each planted problem has a control that should stay healthy:
   P2  latest 20 orders (sort, no index)                  vs  C2  order by primary key
   P3  product name LIKE '%term%' (leading wildcard)       vs  C3  products by category (indexed)
   P4  (nothing queries idx_orders_legacy_lookup)          vs  C4  orders by primary key range
+
+MongoDB (Phase 6), at about QP_DEMO_MONGO_RATE operations per second on QP_DEMO_MONGO_URL:
+
+  M1  orders by customerId (no index → COLLSCAN)          vs  MC1 order by _id (IDHACK)
+                                                          vs  MC2 order by orderNo (indexed)
+  M2  latest 20 orders by placedAt (in-memory SORT)       vs  MC3 latest 20 by _id (index order)
+  M3  products by unanchored sku $regex (whole index)     vs  MC4 products by ^SKU- prefix
 """
 
 from __future__ import annotations
@@ -30,10 +37,13 @@ from typing import Any
 
 import psycopg
 from psycopg.types.numeric import Int8
+from pymongo import AsyncMongoClient
+from pymongo.errors import PyMongoError
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_DSN = "postgresql://shop_app:shop-app@demo-postgres:5432/shop"
+DEFAULT_MONGO_URL = "mongodb://mongo:27017/?directConnection=true"
 TERMS = ["lamp", "chair", "kettle", "pack", "phone", "mug", "desk", "jacket", "ultra", "eco"]
 CATEGORIES = [f"category-{n}" for n in range(1, 41)]  # matches the seed
 
@@ -122,6 +132,85 @@ async def run(dsn: str, rate: float, duration: float | None = None) -> int:
     return executed
 
 
+@dataclass(frozen=True)
+class MongoOperation:
+    label: str
+    run: Callable[[Any, dict[str, Any]], Any]  # (database, context) -> awaitable
+    weight: int
+
+
+def mongo_operations() -> list[MongoOperation]:
+    def m1(db: Any, c: dict[str, Any]) -> Any:
+        return db.orders.find({"customerId": random.randint(1, c["customers"])}).to_list()
+
+    def m2(db: Any, c: dict[str, Any]) -> Any:
+        return db.orders.find({}).sort("placedAt", -1).limit(20).to_list()
+
+    def m3(db: Any, c: dict[str, Any]) -> Any:
+        return db.products.find({"sku": {"$regex": f"{random.randint(0, 9999):04d}"}}).to_list()
+
+    def mc1(db: Any, c: dict[str, Any]) -> Any:
+        return db.orders.find_one({"_id": random.choice(c["ids"])})
+
+    def mc2(db: Any, c: dict[str, Any]) -> Any:
+        return db.orders.find_one({"orderNo": random.randint(1, c["orders"])})
+
+    def mc3(db: Any, c: dict[str, Any]) -> Any:
+        return db.orders.find({}).sort("_id", -1).limit(20).to_list()
+
+    def mc4(db: Any, c: dict[str, Any]) -> Any:
+        prefix = f"^SKU-0{random.randint(0, 199):03d}"
+        return db.products.find({"sku": {"$regex": prefix}}).limit(10).to_list()
+
+    return [
+        MongoOperation("M1 orders by customerId", m1, 4),
+        MongoOperation("M2 latest orders", m2, 2),
+        MongoOperation("M3 sku regex", m3, 2),
+        MongoOperation("MC1 order by _id", mc1, 6),
+        MongoOperation("MC2 order by orderNo", mc2, 6),
+        MongoOperation("MC3 latest by _id", mc3, 3),
+        MongoOperation("MC4 sku prefix", mc4, 3),
+    ]
+
+
+async def run_mongo(url: str, rate: float, duration: float | None = None) -> int:
+    """Run the MongoDB operations at `rate` per second. Returns how many ran."""
+    operations = mongo_operations()
+    weights = [o.weight for o in operations]
+    executed = 0
+    started = time.monotonic()
+    client: AsyncMongoClient[dict[str, Any]] = AsyncMongoClient(url, appname="shop-app")
+    try:
+        db = client.shop
+        ids = [d["_id"] async for d in db.orders.find({}, {"_id": 1}).limit(1000)]
+        context = {
+            "ids": ids or [None],
+            "orders": await db.orders.estimated_document_count() or 1,
+            "customers": int(os.environ.get("QP_DEMO_CUSTOMERS", "20000")),
+        }
+        interval = 1.0 / rate
+        while duration is None or time.monotonic() - started < duration:
+            operation = random.choices(operations, weights)[0]
+            tick = time.monotonic()
+            await operation.run(db, context)
+            executed += 1
+            if executed % 500 == 0:
+                logger.info("workload: %d mongodb operations executed", executed)
+            await asyncio.sleep(max(0.0, interval - (time.monotonic() - tick)))
+    finally:
+        await client.close()
+    return executed
+
+
+async def run_mongo_forever(url: str, rate: float) -> None:
+    while True:
+        try:
+            await run_mongo(url, rate)
+        except (PyMongoError, OSError) as exc:
+            logger.warning("mongodb workload interrupted (%s); retrying in 5s", type(exc).__name__)
+            await asyncio.sleep(5)
+
+
 async def run_forever(dsn: str, rate: float) -> None:
     """Keep the workload going, reconnecting if the database restarts."""
     while True:
@@ -137,7 +226,16 @@ def main() -> None:
     if sys.platform == "win32":  # psycopg async needs the selector loop on Windows
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     rate = float(os.environ.get("QP_DEMO_RATE", "20"))
-    asyncio.run(run_forever(os.environ.get("QP_DEMO_WORKLOAD_DSN", DEFAULT_DSN), rate))
+    mongo_url = os.environ.get("QP_DEMO_MONGO_URL", DEFAULT_MONGO_URL)
+    mongo_rate = float(os.environ.get("QP_DEMO_MONGO_RATE", "10"))
+
+    async def both() -> None:
+        tasks = [run_forever(os.environ.get("QP_DEMO_WORKLOAD_DSN", DEFAULT_DSN), rate)]
+        if mongo_url:
+            tasks.append(run_mongo_forever(mongo_url, mongo_rate))
+        await asyncio.gather(*tasks)
+
+    asyncio.run(both())
 
 
 if __name__ == "__main__":

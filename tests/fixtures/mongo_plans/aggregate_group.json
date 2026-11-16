@@ -1,0 +1,109 @@
+{
+ "explainVersion": "1",
+ "stages": [
+  {
+   "$cursor": {
+    "queryPlanner": {
+     "namespace": "probe.orders",
+     "indexFilterSet": false,
+     "parsedQuery": {
+      "$and": [
+       {
+        "status": {
+         "$eq": "a"
+        }
+       },
+       {
+        "total": {
+         "$gt": 10
+        }
+       }
+      ]
+     },
+     "queryHash": "B1B748D4",
+     "planCacheKey": "B1B748D4",
+     "optimizationTimeMillis": 0,
+     "maxIndexedOrSolutionsReached": false,
+     "maxIndexedAndSolutionsReached": false,
+     "maxScansToExplodeReached": false,
+     "winningPlan": {
+      "stage": "PROJECTION_SIMPLE",
+      "transformBy": {
+       "customerId": 1,
+       "_id": 0
+      },
+      "inputStage": {
+       "stage": "COLLSCAN",
+       "filter": {
+        "$and": [
+         {
+          "status": {
+           "$eq": "a"
+          }
+         },
+         {
+          "total": {
+           "$gt": 10
+          }
+         }
+        ]
+       },
+       "direction": "forward"
+      }
+     },
+     "rejectedPlans": []
+    }
+   }
+  },
+  {
+   "$group": {
+    "_id": "$customerId",
+    "n": {
+     "$sum": {
+      "$const": 1
+     }
+    }
+   }
+  },
+  {
+   "$sort": {
+    "sortKey": {
+     "n": -1
+    },
+    "limit": 5
+   }
+  }
+ ],
+ "command": {
+  "aggregate": "orders",
+  "pipeline": [
+   {
+    "$match": {
+     "status": "a",
+     "total": {
+      "$gt": 10
+     }
+    }
+   },
+   {
+    "$group": {
+     "_id": "$customerId",
+     "n": {
+      "$sum": 1
+     }
+    }
+   },
+   {
+    "$sort": {
+     "n": -1
+    }
+   },
+   {
+    "$limit": 5
+   }
+  ],
+  "cursor": {},
+  "$db": "probe"
+ },
+ "ok": 1
+}

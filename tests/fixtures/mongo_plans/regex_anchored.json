@@ -1,0 +1,59 @@
+{
+ "explainVersion": "1",
+ "queryPlanner": {
+  "namespace": "probe.products",
+  "indexFilterSet": false,
+  "parsedQuery": {
+   "sku": {
+    "$regex": "^SKU-0001"
+   }
+  },
+  "queryHash": "D26DBD8E",
+  "planCacheKey": "812239AC",
+  "optimizationTimeMillis": 0,
+  "maxIndexedOrSolutionsReached": false,
+  "maxIndexedAndSolutionsReached": false,
+  "maxScansToExplodeReached": false,
+  "winningPlan": {
+   "stage": "LIMIT",
+   "limitAmount": 10,
+   "inputStage": {
+    "stage": "FETCH",
+    "inputStage": {
+     "stage": "IXSCAN",
+     "keyPattern": {
+      "sku": 1
+     },
+     "indexName": "sku_1",
+     "isMultiKey": false,
+     "multiKeyPaths": {
+      "sku": []
+     },
+     "isUnique": false,
+     "isSparse": false,
+     "isPartial": false,
+     "indexVersion": 2,
+     "direction": "forward",
+     "indexBounds": {
+      "sku": [
+       "[\"SKU-0001\", \"SKU-0002\")",
+       "[/^SKU-0001/, /^SKU-0001/]"
+      ]
+     }
+    }
+   }
+  },
+  "rejectedPlans": []
+ },
+ "command": {
+  "find": "products",
+  "filter": {
+   "sku": {
+    "$regex": "^SKU-0001"
+   }
+  },
+  "limit": 10,
+  "$db": "probe"
+ },
+ "ok": 1
+}

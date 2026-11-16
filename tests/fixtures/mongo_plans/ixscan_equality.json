@@ -1,0 +1,51 @@
+{
+ "explainVersion": "1",
+ "queryPlanner": {
+  "namespace": "probe.orders",
+  "indexFilterSet": false,
+  "parsedQuery": {
+   "orderNo": {
+    "$eq": 42
+   }
+  },
+  "queryHash": "B212AA9D",
+  "planCacheKey": "1771639B",
+  "optimizationTimeMillis": 0,
+  "maxIndexedOrSolutionsReached": false,
+  "maxIndexedAndSolutionsReached": false,
+  "maxScansToExplodeReached": false,
+  "winningPlan": {
+   "stage": "FETCH",
+   "inputStage": {
+    "stage": "IXSCAN",
+    "keyPattern": {
+     "orderNo": 1
+    },
+    "indexName": "orderNo_1",
+    "isMultiKey": false,
+    "multiKeyPaths": {
+     "orderNo": []
+    },
+    "isUnique": false,
+    "isSparse": false,
+    "isPartial": false,
+    "indexVersion": 2,
+    "direction": "forward",
+    "indexBounds": {
+     "orderNo": [
+      "[42, 42]"
+     ]
+    }
+   }
+  },
+  "rejectedPlans": []
+ },
+ "command": {
+  "find": "orders",
+  "filter": {
+   "orderNo": 42
+  },
+  "$db": "probe"
+ },
+ "ok": 1
+}
