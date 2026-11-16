@@ -1,0 +1,165 @@
+{
+  "problem": "P2",
+  "rule_id": "PG-SORT-NO-INDEX",
+  "expected_terms": [
+    [
+      "index"
+    ],
+    [
+      "created_at"
+    ],
+    [
+      "sort"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "PG-SORT-NO-INDEX",
+          "title": "Sort without a supporting index",
+          "description": "The plan sorts a full scan of a large table under a LIMIT: an index in the sort order would return the first rows directly.",
+          "thresholds": {
+            "min_calls": 10,
+            "min_table_rows": 10000
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "Sorts all of public.orders to return the first rows",
+          "confidence": "high",
+          "evidence_strength": "plan"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "postgres",
+          "server_version": "16.16"
+        }
+      },
+      {
+        "id": "operation",
+        "kind": "operation",
+        "data": {
+          "text": "SELECT id, customer_id, total, created_at FROM orders ORDER BY created_at DESC LIMIT $1",
+          "window_minutes": 60,
+          "calls": 3427,
+          "total_time_ms": 48127.9,
+          "mean_time_ms": 14.044,
+          "share_of_source_time": 0.432,
+          "rows_or_documents_returned": 68540
+        }
+      },
+      {
+        "id": "fact:calls",
+        "kind": "fact",
+        "data": {
+          "label": "Calls in the window",
+          "value": 3427
+        }
+      },
+      {
+        "id": "fact:total_exec_time_ms",
+        "kind": "fact",
+        "data": {
+          "label": "Execution time in the window",
+          "value": 48127.9
+        }
+      },
+      {
+        "id": "fact:table_rows",
+        "kind": "fact",
+        "data": {
+          "label": "Rows in the table",
+          "value": 200000
+        }
+      },
+      {
+        "id": "fact:limit_rows",
+        "kind": "fact",
+        "data": {
+          "label": "Rows under the Limit (planner's estimate)",
+          "value": 11765.0
+        }
+      },
+      {
+        "id": "fact:sort_key",
+        "kind": "fact",
+        "data": {
+          "label": "Sort key",
+          "value": "created_at DESC"
+        }
+      },
+      {
+        "id": "plan:0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Limit",
+          "estimated_rows": 11765.0,
+          "total_cost": 18198.25,
+          "children": [
+            "plan:0.0"
+          ]
+        }
+      },
+      {
+        "id": "plan:0.0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Gather Merge",
+          "estimated_rows": 117647.0,
+          "total_cost": 30374.68,
+          "children": [
+            "plan:0.0.0"
+          ]
+        }
+      },
+      {
+        "id": "plan:0.0.0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Sort",
+          "estimated_rows": 117647.0,
+          "total_cost": 16139.38,
+          "sort_key": [
+            "created_at DESC"
+          ],
+          "children": [
+            "plan:0.0.0.0"
+          ]
+        }
+      },
+      {
+        "id": "plan:0.0.0.0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Seq Scan",
+          "relation": "orders",
+          "estimated_rows": 117647.0,
+          "total_cost": 3119.47
+        }
+      },
+      {
+        "id": "table:public.orders",
+        "kind": "table",
+        "data": {
+          "table": "public.orders",
+          "live_rows": 200000,
+          "sequential_scans": 184258,
+          "index_scans": 263292,
+          "size_bytes": 29646848,
+          "sampled_at": "2026-11-16T16:47:52.079040+00:00"
+        }
+      }
+    ]
+  }
+}

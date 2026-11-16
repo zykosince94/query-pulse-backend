@@ -1,4 +1,4 @@
-.PHONY: install dev test lint fmt typecheck openapi openapi-check migrate bootstrap demo down logs
+.PHONY: install dev test lint fmt typecheck openapi openapi-check migrate bootstrap demo down logs ai-eval fuzz soak
 
 install:  ## Install all dependencies (incl. dev) into .venv
 	uv sync
@@ -39,3 +39,12 @@ down:
 
 logs:
 	docker compose logs -f app
+
+ai-eval:  ## Score the AI assistant on the seven planted problems (needs QP_AI_EVAL_API_KEY, QP_AI_EVAL_MODEL)
+	uv run python scripts/ai_eval.py
+
+fuzz:  ## Schemathesis over every API operation (QP_FUZZ_EXAMPLES, default 20)
+	uv run pytest tests/test_fuzz.py
+
+soak:  ## One-hour soak test against the running stack (make demo first)
+	uv run python scripts/soak.py --minutes 60

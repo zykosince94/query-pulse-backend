@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     finding_resolve_after_seconds: float = Field(default=3600.0, gt=0)
     retention_days: int = Field(default=14, ge=1)
 
+    # The optional AI assistant (off until an admin saves a provider, model and key). The
+    # OpenAI base URL is configurable for OpenAI-compatible gateways; the fake provider is for
+    # tests only and is never offered unless this flag is on.
+    openai_base_url: str = "https://api.openai.com/v1"
+    ai_timeout_seconds: float = Field(default=60.0, gt=0, le=300)
+    ai_allow_fake_provider: bool = False
+
     # Logging: one JSON object per line (or readable text while developing).
     log_format: Literal["json", "text"] = "json"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
@@ -118,6 +125,12 @@ class Settings(BaseSettings):
             raise ValueError("QP_DEMO_PASSWORD is required when QP_DEMO_ENABLED is true")
         if self.demo_enabled and self.demo_username == self.admin_username:
             raise ValueError("QP_DEMO_USERNAME must differ from QP_ADMIN_USERNAME")
+        return self
+
+    @model_validator(mode="after")
+    def _no_fake_ai_in_prod(self) -> Settings:
+        if self.environment == "prod" and self.ai_allow_fake_provider:
+            raise ValueError("QP_AI_ALLOW_FAKE_PROVIDER must be false when QP_ENVIRONMENT is prod")
         return self
 
     @model_validator(mode="after")

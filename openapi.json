@@ -1,6 +1,260 @@
 {
   "components": {
     "schemas": {
+      "AISettingsOut": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "key_hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key Hint"
+          },
+          "key_set": {
+            "title": "Key Set",
+            "type": "boolean"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "provider_calls": {
+            "title": "Provider Calls",
+            "type": "integer"
+          },
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderOption"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "enabled",
+          "provider",
+          "model",
+          "key_set",
+          "key_hint",
+          "providers",
+          "provider_calls",
+          "updated_at"
+        ],
+        "title": "AISettingsOut",
+        "type": "object"
+      },
+      "AISettingsUpdate": {
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "model": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "AISettingsUpdate",
+        "type": "object"
+      },
+      "AnswerOut": {
+        "description": "A checked AI answer. Advisory only: nothing in it is ever executed.\n\n`status` \"rejected\" means the server discarded the provider's answer (`error` says why,\ne.g. it cited evidence that wasn't sent). `current` is false when the finding's evidence\nhas changed since the answer was given.",
+        "properties": {
+          "cached": {
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "caveats": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Caveats",
+            "type": "array"
+          },
+          "claims": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ClaimOut"
+            },
+            "title": "Claims",
+            "type": "array"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "evidence_hash": {
+            "title": "Evidence Hash",
+            "type": "string"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "explain",
+              "draft"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "enum": [
+                  "sql",
+                  "mongosh"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "finding_id",
+          "kind",
+          "status",
+          "provider",
+          "model",
+          "evidence_hash",
+          "current",
+          "cached"
+        ],
+        "title": "AnswerOut",
+        "type": "object"
+      },
       "AuthConfig": {
         "properties": {
           "demo_enabled": {
@@ -59,6 +313,32 @@
           "fix"
         ],
         "title": "CapabilityOut",
+        "type": "object"
+      },
+      "ClaimOut": {
+        "properties": {
+          "cited": {
+            "title": "Cited",
+            "type": "boolean"
+          },
+          "evidence": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text",
+          "evidence",
+          "cited"
+        ],
+        "title": "ClaimOut",
         "type": "object"
       },
       "CollectorStatus": {
@@ -158,6 +438,8 @@
           "source_id": {
             "anyOf": [
               {
+                "maximum": 2147483647.0,
+                "minimum": 1.0,
                 "type": "integer"
               },
               {
@@ -259,6 +541,40 @@
         "title": "ErrorCode",
         "type": "string"
       },
+      "EvidenceBundleOut": {
+        "description": "Exactly what would be sent to the provider for this finding.",
+        "properties": {
+          "document": {
+            "additionalProperties": true,
+            "title": "Document",
+            "type": "object"
+          },
+          "evidence_hash": {
+            "title": "Evidence Hash",
+            "type": "string"
+          },
+          "finding_id": {
+            "title": "Finding Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "finding_id",
+          "evidence_hash",
+          "items",
+          "document"
+        ],
+        "title": "EvidenceBundleOut",
+        "type": "object"
+      },
       "EvidenceOut": {
         "description": "A link to the data a finding cites.\n\n- operation: observations of `fingerprint_id` between `start` and `end`\n- plan: plan `plan_id` of `fingerprint_id`, pointing at node `node_path`\n- relation_stat: table or index sample `relation_stat_id`\n\n`available` is false once retention has deleted what it points at.",
         "properties": {
@@ -354,6 +670,42 @@
           "available"
         ],
         "title": "EvidenceOut",
+        "type": "object"
+      },
+      "FindingAI": {
+        "description": "The AI state of one finding: whether AI is on, and the latest answers given for it.",
+        "properties": {
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "explain": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnswerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "explain",
+          "draft"
+        ],
+        "title": "FindingAI",
         "type": "object"
       },
       "FindingCounts": {
@@ -1383,6 +1735,24 @@
         "title": "PlanNode",
         "type": "object"
       },
+      "ProviderOption": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label"
+        ],
+        "title": "ProviderOption",
+        "type": "object"
+      },
       "Role": {
         "enum": [
           "admin",
@@ -1439,6 +1809,35 @@
           "thresholds"
         ],
         "title": "RuleOut",
+        "type": "object"
+      },
+      "RuntimeSettings": {
+        "description": "Collection and retention settings. Read-only here: they come from the environment.",
+        "properties": {
+          "collector_interval_seconds": {
+            "title": "Collector Interval Seconds",
+            "type": "number"
+          },
+          "retention_days": {
+            "title": "Retention Days",
+            "type": "integer"
+          },
+          "rules_interval_seconds": {
+            "title": "Rules Interval Seconds",
+            "type": "number"
+          },
+          "rules_window_minutes": {
+            "title": "Rules Window Minutes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "retention_days",
+          "collector_interval_seconds",
+          "rules_interval_seconds",
+          "rules_window_minutes"
+        ],
+        "title": "RuntimeSettings",
         "type": "object"
       },
       "ServerMetrics": {
@@ -2192,10 +2591,97 @@
   "info": {
     "description": "Query Pulse backend.",
     "title": "Query Pulse API",
-    "version": "0.6.0"
+    "version": "1.0.0"
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/ai/settings": {
+      "get": {
+        "description": "Whether AI is on, with which provider and model. The key is never returned.",
+        "operationId": "getAISettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Ai Settings",
+        "tags": [
+          "ai"
+        ]
+      },
+      "put": {
+        "description": "Save the provider, model and (optionally) a new key. Turning AI on checks the key and\nmodel with the provider first; if that fails, nothing is saved.",
+        "operationId": "updateAISettings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AISettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The key or model was refused; nothing was saved"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Ai Settings",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/ai/settings/key": {
+      "delete": {
+        "description": "Delete the saved key. AI turns off.",
+        "operationId": "deleteAIKey",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AISettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Ai Key",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/auth/config": {
       "get": {
         "description": "Public: what the sign-in screen should offer.",
@@ -2376,6 +2862,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maximum": 2147483647,
                   "minimum": 1,
                   "type": "integer"
                 },
@@ -2411,6 +2898,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maximum": 2147483647,
                   "minimum": 1,
                   "type": "integer"
                 },
@@ -2460,6 +2948,8 @@
             "name": "finding_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Finding Id",
               "type": "integer"
             }
@@ -2501,6 +2991,8 @@
             "name": "finding_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Finding Id",
               "type": "integer"
             }
@@ -2544,6 +3036,160 @@
         ]
       }
     },
+    "/api/findings/{finding_id}/ai": {
+      "get": {
+        "description": "Whether AI is on, and the latest explanation and draft given for this finding.",
+        "operationId": "getFindingAI",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Finding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingAI"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finding Ai",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/findings/{finding_id}/ai/bundle": {
+      "get": {
+        "description": "Exactly what would be sent to the AI provider for this finding (\"view what was sent\").",
+        "operationId": "getFindingEvidenceBundle",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Finding Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvidenceBundleOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Finding Bundle",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
+    "/api/findings/{finding_id}/ai/{kind}": {
+      "post": {
+        "description": "Explain the finding, or draft a fix, with the configured provider.\n\nThe answer is checked before it's returned: citing evidence that wasn't sent, or drafting a\ndestructive statement, rejects it. Good answers are cached by the evidence they were given,\nso asking the same question again costs nothing.",
+        "operationId": "askFindingAI",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "finding_id",
+            "required": true,
+            "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Finding Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "explain",
+                "draft"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "AI is off"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "The AI provider couldn't answer"
+          }
+        },
+        "summary": "Ask Finding Ai",
+        "tags": [
+          "ai"
+        ]
+      }
+    },
     "/api/operations": {
       "get": {
         "description": "Operations ranked by total time, mean time or calls over a time window.",
@@ -2571,6 +3217,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "maximum": 2147483647,
                   "minimum": 1,
                   "type": "integer"
                 },
@@ -2709,6 +3356,8 @@
             "name": "operation_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Operation Id",
               "type": "integer"
             }
@@ -2810,6 +3459,8 @@
             "name": "operation_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Operation Id",
               "type": "integer"
             }
@@ -2851,6 +3502,8 @@
             "name": "operation_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Operation Id",
               "type": "integer"
             }
@@ -2897,6 +3550,8 @@
             "name": "plan_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Plan Id",
               "type": "integer"
             }
@@ -2953,6 +3608,28 @@
         "summary": "List Rules",
         "tags": [
           "findings"
+        ]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "description": "Collection and retention settings (from the environment; read-only).",
+        "operationId": "getRuntimeSettings",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Runtime Settings",
+        "tags": [
+          "ai"
         ]
       }
     },
@@ -3081,6 +3758,8 @@
             "name": "source_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Source Id",
               "type": "integer"
             }
@@ -3114,6 +3793,8 @@
             "name": "source_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Source Id",
               "type": "integer"
             }
@@ -3155,6 +3836,8 @@
             "name": "source_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Source Id",
               "type": "integer"
             }
@@ -3214,6 +3897,8 @@
             "name": "source_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Source Id",
               "type": "integer"
             }
@@ -3257,6 +3942,8 @@
             "name": "source_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Source Id",
               "type": "integer"
             }
@@ -3308,6 +3995,8 @@
             "name": "source_id",
             "required": true,
             "schema": {
+              "maximum": 2147483647,
+              "minimum": 1,
               "title": "Source Id",
               "type": "integer"
             }

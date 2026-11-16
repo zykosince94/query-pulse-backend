@@ -1,0 +1,107 @@
+{
+  "problem": "P4",
+  "rule_id": "PG-UNUSED-INDEX",
+  "expected_terms": [
+    [
+      "unused",
+      "never used",
+      "zero scans",
+      "no scans",
+      "0 scans"
+    ],
+    [
+      "drop index"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "PG-UNUSED-INDEX",
+          "title": "Unused index",
+          "description": "A non-unique index of meaningful size with zero scans throughout the window. Heuristic: replicas and statistics resets aren't visible.",
+          "thresholds": {
+            "min_size_bytes": 1048576
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "Index public.idx_orders_legacy_lookup is never used",
+          "confidence": "medium",
+          "evidence_strength": "statistics"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "postgres",
+          "server_version": "16.16"
+        }
+      },
+      {
+        "id": "fact:size_bytes",
+        "kind": "fact",
+        "data": {
+          "label": "Index size",
+          "value": 9175040
+        }
+      },
+      {
+        "id": "fact:idx_scan",
+        "kind": "fact",
+        "data": {
+          "label": "Index scans",
+          "value": 0
+        }
+      },
+      {
+        "id": "fact:observed_minutes",
+        "kind": "fact",
+        "data": {
+          "label": "Watched for (minutes)",
+          "value": 900.9
+        }
+      },
+      {
+        "id": "fact:samples",
+        "kind": "fact",
+        "data": {
+          "label": "Samples",
+          "value": 632
+        }
+      },
+      {
+        "id": "index:public.idx_orders_legacy_lookup",
+        "kind": "index",
+        "data": {
+          "table": "public.orders",
+          "index": "idx_orders_legacy_lookup",
+          "index_scans": 0,
+          "size_bytes": 9175040,
+          "unique": false,
+          "sampled_at": "2026-11-16T01:46:58.221386+00:00"
+        }
+      },
+      {
+        "id": "index:public.idx_orders_legacy_lookup",
+        "kind": "index",
+        "data": {
+          "table": "public.orders",
+          "index": "idx_orders_legacy_lookup",
+          "index_scans": 0,
+          "size_bytes": 9175040,
+          "unique": false,
+          "sampled_at": "2026-11-16T16:47:52.079040+00:00"
+        }
+      }
+    ]
+  }
+}

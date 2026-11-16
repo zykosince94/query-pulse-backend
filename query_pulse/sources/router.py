@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from query_pulse.accounts.dependencies import SessionDep, Writer, current_user
 from query_pulse.adapters import AdapterError
+from query_pulse.api_types import Id
 from query_pulse.config import Settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.sources import service
@@ -75,7 +76,7 @@ async def list_sources(session: SessionDep) -> list[SourceOut]:
 
 
 @router.get("/sources/{source_id}", response_model=SourceDetail, operation_id="getSource")
-async def get_source(source_id: int, session: SessionDep) -> SourceDetail:
+async def get_source(source_id: Id, session: SessionDep) -> SourceDetail:
     return service.to_detail(await _get_or_404(session, source_id))
 
 
@@ -156,7 +157,7 @@ async def create_source(
     responses={400: CONNECTION_FAILED, 409: {"description": "Name already in use"}},
 )
 async def update_source(
-    source_id: int, payload: SourceUpdate, request: Request, session: SessionDep, _: Writer
+    source_id: Id, payload: SourceUpdate, request: Request, session: SessionDep, _: Writer
 ) -> SourceDetail:
     """Replace a source's settings.
 
@@ -212,7 +213,7 @@ async def update_source(
 
 @router.post("/sources/{source_id}/check", response_model=SourceDetail, operation_id="checkSource")
 async def check_source(
-    source_id: int, request: Request, session: SessionDep, _: Writer
+    source_id: Id, request: Request, session: SessionDep, _: Writer
 ) -> SourceDetail:
     """Re-run the connection and capability checks with the stored settings.
 
@@ -244,7 +245,7 @@ async def check_source(
 @router.delete(
     "/sources/{source_id}", status_code=status.HTTP_204_NO_CONTENT, operation_id="deleteSource"
 )
-async def delete_source(source_id: int, session: SessionDep, _: Writer) -> Response:
+async def delete_source(source_id: Id, session: SessionDep, _: Writer) -> Response:
     source = await _get_or_404(session, source_id)
     await session.delete(source)
     await session.commit()

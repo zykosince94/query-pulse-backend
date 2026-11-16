@@ -182,3 +182,36 @@ def test_json_formatter_includes_exceptions() -> None:
         record = logging.LogRecord("x", logging.ERROR, __file__, 1, "failed", None, sys.exc_info())
     entry = json.loads(JsonFormatter().format(record))
     assert entry["message"] == "failed" and "ValueError: boom" in entry["exception"]
+
+
+# --- found by fuzzing (Phase 7) -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/sources/2147483648",
+        "/api/sources/9223372036854775808/trend",
+        "/api/operations/2147483648",
+        "/api/plans/9223372036854775808",
+        "/api/findings/2147483648",
+        "/api/findings/2147483648/ai",
+    ],
+)
+def test_ids_beyond_the_integer_column_are_422_not_500(
+    login: Callable[[str], TestClient], path: str
+) -> None:
+    response = login("demo").get(path)
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
+
+
+def test_window_errors_have_the_documented_validation_shape(
+    login: Callable[[str], TestClient],
+) -> None:
+    response = login("demo").get(
+        "/api/operations", params={"minutes": 5, "start": "2026-01-01T00:00:00Z"}
+    )
+    assert response.status_code == 422
+    [error] = response.json()["detail"]
+    assert error["loc"] == ["query", "minutes"] and "not both" in error["msg"]

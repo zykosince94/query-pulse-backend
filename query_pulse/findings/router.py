@@ -7,6 +7,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from query_pulse.accounts.dependencies import SessionDep, Writer, current_user
+from query_pulse.api_types import MAX_ID, Id, IdQuery
 from query_pulse.db import utcnow
 from query_pulse.findings.engine import evidence_available
 from query_pulse.findings.models import Finding, FindingStatus
@@ -92,10 +93,10 @@ async def list_findings(
         FindingStatusName | None,
         Query(alias="status", description="Only findings with this status (default: all)"),
     ] = None,
-    source_id: Annotated[int | None, Query(ge=1)] = None,
+    source_id: IdQuery = None,
     rule_id: Annotated[str | None, Query(max_length=64)] = None,
     operation_id: Annotated[
-        int | None, Query(ge=1, description="Only findings about this operation")
+        int | None, Query(ge=1, le=MAX_ID, description="Only findings about this operation")
     ] = None,
 ) -> FindingList:
     """Findings, most confident and most recently seen first, with counts per status."""
@@ -139,13 +140,13 @@ async def _load(
 
 
 @router.get("/findings/{finding_id}", response_model=FindingOut, operation_id="getFinding")
-async def get_finding(finding_id: int, session: SessionDep) -> FindingOut:
+async def get_finding(finding_id: Id, session: SessionDep) -> FindingOut:
     return await _to_out(session, *await _load(session, finding_id))
 
 
 @router.patch("/findings/{finding_id}", response_model=FindingOut, operation_id="updateFinding")
 async def update_finding(
-    finding_id: int, payload: FindingStatusUpdate, session: SessionDep, _: Writer
+    finding_id: Id, payload: FindingStatusUpdate, session: SessionDep, _: Writer
 ) -> FindingOut:
     """Dismiss, resolve or reopen a finding.
 

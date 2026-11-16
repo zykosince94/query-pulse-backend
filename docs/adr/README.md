@@ -15,3 +15,4 @@ costs. When a decision changes, a new record supersedes the old one.
 | [0008](0008-rules-before-ai.md) | Rules detect problems; AI only explains |
 | [0009](0009-finding-lifecycle.md) | One finding per rule and target; dismissals stick |
 | [0010](0010-no-stored-query-values.md) | MongoDB: store shapes and redacted plans, never query values |
+| [0011](0011-ai-evidence-and-citations.md) | AI: one provider behind an interface, evidence bundles, checked citations |

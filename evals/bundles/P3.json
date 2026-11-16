@@ -1,0 +1,140 @@
+{
+  "problem": "P3",
+  "rule_id": "PG-LEADING-WILDCARD",
+  "expected_terms": [
+    [
+      "wildcard",
+      "leading %",
+      "like"
+    ],
+    [
+      "trigram",
+      "pg_trgm",
+      "gin"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "PG-LEADING-WILDCARD",
+          "title": "Leading-wildcard pattern search",
+          "description": "A LIKE or ILIKE answered by scanning the table; a leading % can't use a b-tree index (a trigram index can).",
+          "thresholds": {
+            "min_calls": 10,
+            "min_table_rows": 1000
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "Pattern search scans all of public.products",
+          "confidence": "medium",
+          "evidence_strength": "plan"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "postgres",
+          "server_version": "16.16"
+        }
+      },
+      {
+        "id": "operation",
+        "kind": "operation",
+        "data": {
+          "text": "SELECT id, name, price FROM products WHERE name LIKE $1 LIMIT $2",
+          "window_minutes": 60,
+          "calls": 5166,
+          "total_time_ms": 1351.0,
+          "mean_time_ms": 0.262,
+          "share_of_source_time": 0.0121,
+          "rows_or_documents_returned": 51050
+        }
+      },
+      {
+        "id": "fact:calls",
+        "kind": "fact",
+        "data": {
+          "label": "Calls in the window",
+          "value": 5166
+        }
+      },
+      {
+        "id": "fact:total_exec_time_ms",
+        "kind": "fact",
+        "data": {
+          "label": "Execution time in the window",
+          "value": 1351.0
+        }
+      },
+      {
+        "id": "fact:table_rows",
+        "kind": "fact",
+        "data": {
+          "label": "Rows in the table",
+          "value": 5000
+        }
+      },
+      {
+        "id": "fact:pattern",
+        "kind": "fact",
+        "data": {
+          "label": "Pattern",
+          "value": "$1"
+        }
+      },
+      {
+        "id": "fact:pattern_visible",
+        "kind": "fact",
+        "data": {
+          "label": "Leading % visible in the plan",
+          "value": false
+        }
+      },
+      {
+        "id": "plan:0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Limit",
+          "estimated_rows": 2.0,
+          "total_cost": 9.16,
+          "children": [
+            "plan:0.0"
+          ]
+        }
+      },
+      {
+        "id": "plan:0.0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Seq Scan",
+          "relation": "products",
+          "estimated_rows": 25.0,
+          "total_cost": 114.5,
+          "filter": "(name ~~ $1)"
+        }
+      },
+      {
+        "id": "table:public.products",
+        "kind": "table",
+        "data": {
+          "table": "public.products",
+          "live_rows": 5000,
+          "sequential_scans": 55498,
+          "index_scans": 110598,
+          "size_bytes": 655360,
+          "sampled_at": "2026-11-16T16:47:52.079040+00:00"
+        }
+      }
+    ]
+  }
+}

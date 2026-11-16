@@ -1,0 +1,132 @@
+{
+  "problem": "M2",
+  "rule_id": "MDB-BLOCKING-SORT",
+  "expected_terms": [
+    [
+      "sort"
+    ],
+    [
+      "placedat"
+    ],
+    [
+      "index"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "MDB-BLOCKING-SORT",
+          "title": "In-memory sort",
+          "description": "The winning plan has a SORT stage: no index provides the requested order, so documents are sorted in memory (limited to 100 MB) before any is returned.",
+          "thresholds": {
+            "min_calls": 10
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "In-memory sort on shop.orders",
+          "confidence": "high",
+          "evidence_strength": "plan"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "mongodb",
+          "server_version": "7.0.48"
+        }
+      },
+      {
+        "id": "operation",
+        "kind": "operation",
+        "data": {
+          "text": "{\"find\": \"orders\", \"filter\": {}, \"sort\": {\"placedAt\": -1}, \"limit\": \"?\"}",
+          "namespace": "shop.orders",
+          "window_minutes": 60,
+          "calls": 2704,
+          "total_time_ms": 36369.0,
+          "mean_time_ms": 13.45,
+          "share_of_source_time": 0.2962,
+          "rows_or_documents_returned": 54080,
+          "keys_examined": 0,
+          "documents_examined": 135200000
+        }
+      },
+      {
+        "id": "fact:calls",
+        "kind": "fact",
+        "data": {
+          "label": "Profiled operations in the window",
+          "value": 2704
+        }
+      },
+      {
+        "id": "fact:total_exec_time_ms",
+        "kind": "fact",
+        "data": {
+          "label": "Execution time in the window",
+          "value": 36369.0
+        }
+      },
+      {
+        "id": "fact:docs_examined",
+        "kind": "fact",
+        "data": {
+          "label": "Documents examined",
+          "value": 135200000
+        }
+      },
+      {
+        "id": "fact:keys_examined",
+        "kind": "fact",
+        "data": {
+          "label": "Index keys examined",
+          "value": 0
+        }
+      },
+      {
+        "id": "fact:returned",
+        "kind": "fact",
+        "data": {
+          "label": "Documents returned",
+          "value": 54080
+        }
+      },
+      {
+        "id": "fact:sort_pattern",
+        "kind": "fact",
+        "data": {
+          "label": "Sort pattern",
+          "value": "{\"placedAt\": -1}"
+        }
+      },
+      {
+        "id": "plan:0",
+        "kind": "plan_stage",
+        "data": {
+          "stage": "SORT",
+          "sort_pattern": "{\"placedAt\": -1}",
+          "children": [
+            "plan:0.0"
+          ]
+        }
+      },
+      {
+        "id": "plan:0.0",
+        "kind": "plan_stage",
+        "data": {
+          "stage": "COLLSCAN"
+        }
+      }
+    ]
+  }
+}

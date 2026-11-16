@@ -18,6 +18,8 @@ from query_pulse import http
 from query_pulse.accounts.ratelimit import LoginRateLimiter
 from query_pulse.accounts.router import router as auth_router
 from query_pulse.adapters.postgres import PostgresAdapter
+from query_pulse.ai.router import default_factory
+from query_pulse.ai.router import router as ai_router
 from query_pulse.config import Settings, get_settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import create_engine, create_sessionmaker
@@ -26,7 +28,7 @@ from query_pulse.log import configure_logging
 from query_pulse.sources.router import router as sources_router
 from query_pulse.workload.router import router as workload_router
 
-VERSION = "0.6.0"
+VERSION = "1.0.0"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -47,6 +49,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.sessionmaker = create_sessionmaker(engine)
     app.state.cipher = CredentialCipher(settings.fernet_keys)
     app.state.postgres_adapter = PostgresAdapter()  # tests may swap in a fake
+    app.state.ai_provider_factory = default_factory(settings)  # tests may swap in a fake
+    app.state.ai_provider_calls = 0
     app.state.login_limiter = LoginRateLimiter(
         settings.login_max_failures, settings.login_window_seconds
     )
@@ -81,4 +85,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sources_router)
     app.include_router(workload_router)
     app.include_router(findings_router)
+    app.include_router(ai_router)
     return app

@@ -17,6 +17,10 @@ from tests.integration.conftest import MongoServer, Server
 TIMEOUT = 3.0
 
 
+def major(version: str) -> int:
+    return int(version.split(".")[0])
+
+
 def probe(engine: str, server: Server, database: str, user: str, password: str) -> ProbeResult:
     params = ConnectionParams(
         host=server.host,
@@ -46,7 +50,7 @@ def free_port() -> int:
 
 def test_pg_full_rights_everything_available(pg_preloaded: Server) -> None:
     result = probe("postgres", pg_preloaded, "full_db", "monitor", "monitor-pass")
-    assert result.server_version.startswith("16")
+    assert major(result.server_version) >= 16  # the version matrix also runs the latest
     assert all(c.available for c in result.capabilities), result.capabilities
 
 
@@ -145,7 +149,7 @@ def test_pg_unresolvable_host() -> None:
 
 def test_mongo_profiler_off_shows_the_fix(mongo: MongoServer) -> None:
     result = probe("mongodb", mongo, "shop", "monitor", "monitor-pass")
-    assert result.server_version.startswith("7.")
+    assert major(result.server_version) >= 7
     assert capability(result, "server_status")[0] is True
     assert capability(result, "explain")[0] is True
     available, fix = capability(result, "profiler")
@@ -198,7 +202,7 @@ def probe_tls(server: Server, tls_mode: str) -> ProbeResult:
 
 
 def test_pg_tls_require_encrypts(pg_tls: Server) -> None:
-    assert probe_tls(pg_tls, "require").server_version.startswith("16")
+    assert major(probe_tls(pg_tls, "require").server_version) >= 16
 
 
 def test_pg_tls_verify_full_rejects_an_untrusted_certificate(pg_tls: Server) -> None:

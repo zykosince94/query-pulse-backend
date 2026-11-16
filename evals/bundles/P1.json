@@ -1,0 +1,141 @@
+{
+  "problem": "P1",
+  "rule_id": "PG-SEQSCAN-HOT",
+  "expected_terms": [
+    [
+      "index"
+    ],
+    [
+      "customer_id"
+    ],
+    [
+      "sequential scan",
+      "seq scan",
+      "full scan",
+      "every row",
+      "all rows"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "PG-SEQSCAN-HOT",
+          "title": "Sequential scan in a hot query",
+          "description": "An operation with a large share of execution time whose plan scans a whole large table with a selective filter: an index on the filtered column is likely missing.",
+          "thresholds": {
+            "min_share_of_total_time": 0.1,
+            "min_calls": 10,
+            "min_table_rows": 10000,
+            "max_selectivity": 0.05
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "Sequential scan on public.orders in a hot query",
+          "confidence": "high",
+          "evidence_strength": "plan"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "postgres",
+          "server_version": "16.16"
+        }
+      },
+      {
+        "id": "operation",
+        "kind": "operation",
+        "data": {
+          "text": "SELECT id, status, total FROM orders WHERE customer_id = $1",
+          "window_minutes": 60,
+          "calls": 10426,
+          "total_time_ms": 60640.1,
+          "mean_time_ms": 5.816,
+          "share_of_source_time": 0.5443,
+          "rows_or_documents_returned": 104069
+        }
+      },
+      {
+        "id": "fact:share_of_total_time",
+        "kind": "fact",
+        "data": {
+          "label": "Share of execution time",
+          "value": 0.5443
+        }
+      },
+      {
+        "id": "fact:calls",
+        "kind": "fact",
+        "data": {
+          "label": "Calls in the window",
+          "value": 10426
+        }
+      },
+      {
+        "id": "fact:total_exec_time_ms",
+        "kind": "fact",
+        "data": {
+          "label": "Execution time in the window",
+          "value": 60640.1
+        }
+      },
+      {
+        "id": "fact:table_rows",
+        "kind": "fact",
+        "data": {
+          "label": "Rows in the table",
+          "value": 200000
+        }
+      },
+      {
+        "id": "fact:estimated_rows",
+        "kind": "fact",
+        "data": {
+          "label": "Rows the scan keeps (estimate)",
+          "value": 10.0
+        }
+      },
+      {
+        "id": "fact:selectivity",
+        "kind": "fact",
+        "data": {
+          "label": "Fraction of the table kept",
+          "value": 5e-05
+        }
+      },
+      {
+        "id": "plan:0",
+        "kind": "plan_node",
+        "data": {
+          "node_type": "Seq Scan",
+          "relation": "orders",
+          "estimated_rows": 10.0,
+          "total_cost": 4443.0,
+          "filter": "(customer_id = $1)"
+        }
+      },
+      {
+        "id": "table:public.orders",
+        "kind": "table",
+        "data": {
+          "table": "public.orders",
+          "live_rows": 200000,
+          "sequential_scans": 184258,
+          "index_scans": 263292,
+          "size_bytes": 29646848,
+          "sampled_at": "2026-11-16T16:47:52.079040+00:00"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,126 @@
+{
+  "problem": "M1",
+  "rule_id": "MDB-COLLSCAN",
+  "expected_terms": [
+    [
+      "index"
+    ],
+    [
+      "customerid"
+    ],
+    [
+      "collection scan",
+      "collscan",
+      "every document"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "MDB-COLLSCAN",
+          "title": "Collection scan",
+          "description": "A filtered MongoDB query whose winning plan is a collection scan, examining many more documents than it returns: an index on the filtered field is likely missing.",
+          "thresholds": {
+            "min_calls": 10,
+            "min_examined_per_returned": 100,
+            "min_docs_per_call": 1000
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "Collection scan on shop.orders",
+          "confidence": "high",
+          "evidence_strength": "plan"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "mongodb",
+          "server_version": "7.0.48"
+        }
+      },
+      {
+        "id": "operation",
+        "kind": "operation",
+        "data": {
+          "text": "{\"find\": \"orders\", \"filter\": {\"customerId\": \"?\"}}",
+          "namespace": "shop.orders",
+          "window_minutes": 60,
+          "calls": 5482,
+          "total_time_ms": 67210.0,
+          "mean_time_ms": 12.26,
+          "share_of_source_time": 0.5474,
+          "rows_or_documents_returned": 13692,
+          "keys_examined": 0,
+          "documents_examined": 274100000
+        }
+      },
+      {
+        "id": "fact:calls",
+        "kind": "fact",
+        "data": {
+          "label": "Profiled operations in the window",
+          "value": 5482
+        }
+      },
+      {
+        "id": "fact:total_exec_time_ms",
+        "kind": "fact",
+        "data": {
+          "label": "Execution time in the window",
+          "value": 67210.0
+        }
+      },
+      {
+        "id": "fact:docs_examined",
+        "kind": "fact",
+        "data": {
+          "label": "Documents examined",
+          "value": 274100000
+        }
+      },
+      {
+        "id": "fact:keys_examined",
+        "kind": "fact",
+        "data": {
+          "label": "Index keys examined",
+          "value": 0
+        }
+      },
+      {
+        "id": "fact:returned",
+        "kind": "fact",
+        "data": {
+          "label": "Documents returned",
+          "value": 13692
+        }
+      },
+      {
+        "id": "fact:examined_per_returned",
+        "kind": "fact",
+        "data": {
+          "label": "Documents examined per returned",
+          "value": 20019.0
+        }
+      },
+      {
+        "id": "plan:0",
+        "kind": "plan_stage",
+        "data": {
+          "stage": "COLLSCAN",
+          "filter": "{\"customerId\": {\"$eq\": \"?\"}}"
+        }
+      }
+    ]
+  }
+}

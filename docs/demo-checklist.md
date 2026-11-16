@@ -3,7 +3,7 @@
 The scripted demo. Run it by hand, step by step, before tagging every release, on a machine
 that starts from a fresh clone. Tick each step; if one fails, file an issue and don't tag.
 
-*Covers releases up to v0.6.0 (Phases 1–6).*
+*Covers releases up to v1.0.0 (Phases 1–7).*
 
 ## 0. Fresh start
 
@@ -120,7 +120,39 @@ A minute or two after adding Demo MongoDB:
 - [ ] No values stored (ADR 0010): open any MongoDB plan's "Stored plan (redacted explain
       JSON)": filters and bounds show `?`, never a customer id or sku.
 
-## 7. Hardening
+## 7. AI assistant (QP-AC-26 to QP-AC-29)
+
+With AI off (a fresh stack):
+
+- [ ] Settings shows the AI assistant **Off**, "Requests made by this server since it started:
+      0", and the collection settings (15 s interval, 14 days) read-only.
+- [ ] On the P1 finding, open **AI assistant**: "AI is off" with a link to Settings, no
+      Explain or Draft buttons. **View what is sent** shows the bundle: `rule`, `fact:…`,
+      `plan:0` with `(customer_id = $1)`, `table:public.orders`; no host, user or password.
+
+With your OpenAI key (each request is billed to your account):
+
+- [ ] Settings → provider OpenAI, a model id, your key, tick "Turn the AI assistant on", Save.
+      A wrong key says OpenAI rejected it and nothing is saved; the right one shows **On** and
+      the key only as `…` plus its last four characters.
+- [ ] P1 → AI assistant → **Explain this finding**: a short summary and claims, each with the
+      evidence ids it cites, labelled advisory, with the provider and model. Explain again:
+      the same answer comes back at once (cached; the request counter doesn't move).
+- [ ] **Draft a fix**: SQL to copy (expect `CREATE INDEX CONCURRENTLY … (customer_id)`), "A
+      draft for review. Query Pulse never runs it."
+- [ ] Do the same on M1: the draft is a mongosh `createIndex` command.
+- [ ] As the demo user: the answers are visible, with no Explain or Draft buttons.
+- [ ] `QP_AI_EVAL_API_KEY=… QP_AI_EVAL_MODEL=… make ai-eval`: a score table for P1–P4 and
+      M1–M3; copy the overall scores into the README's "AI evaluation" section (QP-AC-29).
+- [ ] Settings → **Delete the key**: AI turns off.
+
+## 8. Accessibility
+
+- [ ] Sign in and reach Findings, a finding's AI panel and Settings with the keyboard only;
+      focus is always visible.
+- [ ] Switch the OS to dark mode: every screen stays readable.
+
+## 9. Hardening
 
 - [ ] A cross-site write is refused:
       `curl -i -X POST http://127.0.0.1:8000/api/auth/login -H 'Origin: https://evil.example' -H 'content-type: application/json' -d '{"username":"admin","password":"admin-demo-password"}'`
@@ -130,7 +162,7 @@ A minute or two after adding Demo MongoDB:
 - [ ] Every API response has an `X-Request-ID` header, and the app logs show that ID on the
       request's access line.
 
-## 8. Resilience (spot checks)
+## 10. Resilience (spot checks)
 
 - [ ] `docker compose stop demo-postgres`: within a couple of cycles the source turns Failing
       with a clear error. `docker compose start demo-postgres`: it recovers on its own.
@@ -138,7 +170,14 @@ A minute or two after adding Demo MongoDB:
       MongoDB shapes keep their plans; a plan is captured again only once its shape is profiled
       again (the commands lived in memory).
 
-## 9. Wrap up
+## 11. Release (v1.0.0)
+
+- [ ] Fresh-machine check (QP-AC-30): clone both repos into a clean VM or Codespace and reach
+      a working demo using only the READMEs.
+- [ ] Record the demo video and the README GIF of the main journey.
+- [ ] Tag v0.1.0 to v1.0.0 in both repos, with release notes.
+
+## 12. Wrap up
 
 - [ ] Screenshots of new screens at desktop width and 375 px, in light and dark mode.
 - [ ] `docker compose down -v`.

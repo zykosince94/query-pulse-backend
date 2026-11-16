@@ -30,7 +30,7 @@ from query_pulse.findings.models import Finding
 from query_pulse.log import configure_logging
 from query_pulse.sources.models import DataSource, SourceEngine, SourceStatus
 from query_pulse.workload.models import Fingerprint, Observation, Plan, ServerSample
-from tests.integration.conftest import MongoServer, _host
+from tests.integration.conftest import MONGO_IMAGE, MongoServer, _host
 
 Maker = async_sessionmaker[AsyncSession]
 MARKER = "marker-value-that-must-never-be-stored"
@@ -42,7 +42,7 @@ def mongo_target() -> Iterator[MongoServer]:
     monitoring user that has clusterMonitor and read on `shop`."""
     from testcontainers.community.mongodb import MongoDbContainer
 
-    with MongoDbContainer("mongo:7") as container:
+    with MongoDbContainer(MONGO_IMAGE) as container:
         host = _host(container)
         port = int(container.get_exposed_port(27017))
         root_url = (

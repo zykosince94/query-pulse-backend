@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -115,6 +116,7 @@ class Collector:
                 session.add(state)
 
             now = utcnow()
+            started = time.perf_counter()
             state.last_attempt_at = now
             try:
                 async with asyncio.timeout(self.settings.collector_cycle_timeout_seconds):
@@ -147,6 +149,18 @@ class Collector:
                 message = "Unexpected collector error; see the collector logs."
                 outcome = self._record_failure(source, state, message, ErrorCode.UNKNOWN, now)
             await session.commit()
+        # One structured line per cycle: the nightly soak test reads cycle times from these.
+        logger.info(
+            "collector: cycle source_id=%s ok=%s",
+            source_id,
+            outcome.ok,
+            extra={
+                "event": "collector_cycle",
+                "source_id": source_id,
+                "ok": outcome.ok,
+                "duration_ms": round((time.perf_counter() - started) * 1000, 1),
+            },
+        )
         # Only after a real collection: a skipped (disabled) source has no new evidence, and
         # judging its ageing data would "resolve" findings that aren't fixed.
         if outcome.ok and not outcome.skipped:

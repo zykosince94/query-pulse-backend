@@ -6,6 +6,7 @@ they always run there. Containers are shared per module to keep the suite fast.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -30,6 +31,10 @@ if not _docker_available():
 
 from testcontainers.community.mongodb import MongoDbContainer  # noqa: E402
 from testcontainers.community.postgres import PostgresContainer  # noqa: E402
+
+# The version matrix (CI): which server images the integration tests run against.
+POSTGRES_IMAGE = os.environ.get("QP_TEST_POSTGRES_IMAGE", "postgres:16")
+MONGO_IMAGE = os.environ.get("QP_TEST_MONGO_IMAGE", "mongo:7")
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
@@ -74,7 +79,7 @@ def pg_preloaded() -> Iterator[Server]:
     - role `monitor`   : has pg_monitor
     - role `plain`     : no pg_monitor
     """
-    container = PostgresContainer("postgres:16", driver=None).with_command(
+    container = PostgresContainer(POSTGRES_IMAGE, driver=None).with_command(
         "postgres -c shared_preload_libraries=pg_stat_statements"
     )
     with container:
@@ -95,7 +100,7 @@ def pg_preloaded() -> Iterator[Server]:
 @pytest.fixture(scope="session")
 def pg_plain() -> Iterator[Server]:
     """PostgreSQL 16 without pg_stat_statements loaded at all."""
-    with PostgresContainer("postgres:16", driver=None) as container:
+    with PostgresContainer(POSTGRES_IMAGE, driver=None) as container:
         _superuser_sql(
             container,
             container.dbname,
@@ -119,7 +124,7 @@ def mongo() -> Iterator[MongoServer]:
     - `monitor` : clusterMonitor + read on `shop`
     - `reader`  : read on `shop` only (no clusterMonitor)
     """
-    with MongoDbContainer("mongo:7") as container:
+    with MongoDbContainer(MONGO_IMAGE) as container:
         host = _host(container)
         port = int(container.get_exposed_port(27017))
         root_url = (
@@ -149,7 +154,7 @@ def pg_tls() -> Iterator[Server]:
     Self-signed means: encryption works ("require"), but certificate verification
     ("verify-full") must fail, because no trusted CA signed it.
     """
-    container = PostgresContainer("postgres:16", driver=None).with_command(
+    container = PostgresContainer(POSTGRES_IMAGE, driver=None).with_command(
         "postgres -c ssl=on "
         "-c ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem "
         "-c ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key"
@@ -186,7 +191,7 @@ def _collector_target(*extra_settings: str) -> Iterator[PgTarget]:
     command = "postgres -c shared_preload_libraries=pg_stat_statements " + " ".join(
         f"-c {s}" for s in extra_settings
     )
-    with PostgresContainer("postgres:16", driver=None).with_command(command) as container:
+    with PostgresContainer(POSTGRES_IMAGE, driver=None).with_command(command) as container:
         _superuser_sql(
             container,
             container.dbname,

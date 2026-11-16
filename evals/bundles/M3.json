@@ -1,0 +1,158 @@
+{
+  "problem": "M3",
+  "rule_id": "MDB-EXAMINED-RATIO",
+  "expected_terms": [
+    [
+      "regex"
+    ],
+    [
+      "anchor",
+      "prefix",
+      "^"
+    ]
+  ],
+  "bundle": {
+    "bundle_version": 1,
+    "note": "Query literals are shown as ? or '?'. Plans are estimates and nothing was executed to produce them.",
+    "items": [
+      {
+        "id": "rule",
+        "kind": "rule",
+        "data": {
+          "rule_id": "MDB-EXAMINED-RATIO",
+          "title": "Examines far more than it returns",
+          "description": "An indexed MongoDB query whose keys or documents examined, per document returned, are above the threshold (profiler counters), e.g. an unanchored $regex.",
+          "thresholds": {
+            "min_calls": 10,
+            "min_examined_per_returned": 50,
+            "min_examined_per_call": 1000
+          }
+        }
+      },
+      {
+        "id": "finding",
+        "kind": "finding",
+        "data": {
+          "title": "Reads far more than it returns on shop.products",
+          "confidence": "high",
+          "evidence_strength": "statistics"
+        }
+      },
+      {
+        "id": "source",
+        "kind": "source",
+        "data": {
+          "engine": "mongodb",
+          "server_version": "7.0.48"
+        }
+      },
+      {
+        "id": "operation",
+        "kind": "operation",
+        "data": {
+          "text": "{\"find\": \"products\", \"filter\": {\"sku\": {\"$regex\": \"?\"}}}",
+          "namespace": "shop.products",
+          "window_minutes": 60,
+          "calls": 2748,
+          "total_time_ms": 19164.0,
+          "mean_time_ms": 6.974,
+          "share_of_source_time": 0.1561,
+          "rows_or_documents_returned": 16188,
+          "keys_examined": 54431641,
+          "documents_examined": 16188
+        }
+      },
+      {
+        "id": "fact:calls",
+        "kind": "fact",
+        "data": {
+          "label": "Profiled operations in the window",
+          "value": 2748
+        }
+      },
+      {
+        "id": "fact:total_exec_time_ms",
+        "kind": "fact",
+        "data": {
+          "label": "Execution time in the window",
+          "value": 19164.0
+        }
+      },
+      {
+        "id": "fact:docs_examined",
+        "kind": "fact",
+        "data": {
+          "label": "Documents examined",
+          "value": 16188
+        }
+      },
+      {
+        "id": "fact:keys_examined",
+        "kind": "fact",
+        "data": {
+          "label": "Index keys examined",
+          "value": 54431641
+        }
+      },
+      {
+        "id": "fact:returned",
+        "kind": "fact",
+        "data": {
+          "label": "Documents returned",
+          "value": 16188
+        }
+      },
+      {
+        "id": "fact:examined_per_returned",
+        "kind": "fact",
+        "data": {
+          "label": "Examined per returned",
+          "value": 3362.5
+        }
+      },
+      {
+        "id": "fact:full_index_scan",
+        "kind": "fact",
+        "data": {
+          "label": "Index bounds cover the whole index",
+          "value": true
+        }
+      },
+      {
+        "id": "fact:regex",
+        "kind": "fact",
+        "data": {
+          "label": "Shape uses $regex",
+          "value": true
+        }
+      },
+      {
+        "id": "plan:0",
+        "kind": "plan_stage",
+        "data": {
+          "stage": "FETCH",
+          "children": [
+            "plan:0.0"
+          ]
+        }
+      },
+      {
+        "id": "plan:0.0",
+        "kind": "plan_stage",
+        "data": {
+          "stage": "IXSCAN",
+          "index": "sku_1",
+          "key_pattern": "{\"sku\": 1}",
+          "filter": "{\"sku\": {\"$regex\": \"?\"}}",
+          "index_bounds": {
+            "sku": [
+              "[\"\", {})",
+              "?"
+            ]
+          },
+          "scans_whole_index": true
+        }
+      }
+    ]
+  }
+}

@@ -74,14 +74,42 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
   MDB-EXAMINED-RATIO (M3) for MongoDB, whose fixes are mongosh commands to review. There is
   one finding per rule and target: a dismissed finding stays dismissed, a resolved one reopens
   only on newer evidence, and open ones resolve on their own once the problem is gone.
+- **AI assistant (optional, off by default)**: an admin saves an OpenAI key and a model in
+  Settings; the key is checked with OpenAI first, stored encrypted and shown only by its last
+  four characters. Then any finding can be **explained** or get a **draft fix** (SQL or a
+  mongosh command to review, never run). The model sees only an **evidence bundle** built by
+  code from the finding (literals redacted; no credentials, hosts or connection strings), which
+  anyone can view, and must cite its items claim by claim: an answer citing evidence that
+  wasn't sent, or drafting a destructive statement, is rejected. Answers are cached by the
+  evidence, so the same question isn't paid for twice ([ADR 0011](docs/adr/0011-ai-evidence-and-citations.md)).
 - **Hardening**: an Origin check on every state-changing request (cross-site writes get 403), a
   login rate limit (10 failures per client per 5 minutes, then 429), and JSON logs where every
   line carries the request ID, which is also returned in the `X-Request-ID` header.
+  Schemathesis fuzzes every API operation from `openapi.json` on every push (500 examples each
+  nightly); the integration tests also run on the newest PostgreSQL and MongoDB 8; a nightly
+  one-hour soak test watches the collector's memory and cycle times.
 - **Demo data**: a seeded e-commerce database in PostgreSQL with four planted problems (P1–P4),
   and orders and products in MongoDB with three (M1–M3), with the profiler on for `shop`. A
   workload runs them next to healthy controls, so `make demo` has real traffic to measure.
 
-Not yet: the AI assistant and release hardening (Phase 7).
+## Architecture
+
+```
+ React app ──/api──▶ FastAPI (API) ──────────────────────▶ PostgreSQL (app data: sources,
+ (frontend repo)        │    │                              observations, plans, findings)
+                        │    └─ optional, admin-enabled ─▶ OpenAI (redacted evidence bundle only)
+                        │ test connection, capabilities          ▲
+                        ▼                                        │ batched writes
+                    adapters ◀──────────── collector (asyncio, one task per source)
+                        │                    │  PostgreSQL: pg_stat_statements → deltas
+                        ▼                    │  MongoDB: profiler → query shapes
+        monitored PostgreSQL / MongoDB       └─ plans, rules → findings
+        (read-only credentials)
+```
+
+Two processes from one codebase share one PostgreSQL database: the API serves the UI, and the
+collector polls the monitored databases. Nothing generated (SQL, mongosh, AI drafts) is ever
+run against them.
 
 ## Quick start
 
@@ -106,6 +134,10 @@ minute. After a couple of minutes the planted problem P1 (`orders` looked up by 
 which has no index) is at the top of the explorer, and its plan shows the sequential scan.
 Within about three minutes the Findings page shows one finding for each planted problem, P1–P4,
 and none for the healthy controls.
+
+To try the AI assistant, open Settings, choose OpenAI, enter a model id and your API key, tick
+"Turn the AI assistant on" and save; then open any finding's **AI assistant**. It stays off
+otherwise, and makes no request.
 
 Add the demo MongoDB the same way (engine MongoDB, host `mongo`, port 27017, database `shop`,
 no username: the local demo runs without auth). The demo seed has already turned its profiler
@@ -147,6 +179,14 @@ make demo
 QP_ACCEPTANCE_URL=http://127.0.0.1:8000 uv run pytest tests/acceptance
 ```
 
+Hardening runs as part of the suites and in CI:
+
+| Check | Command | When |
+|---|---|---|
+| API fuzzing (Schemathesis) | `make fuzz` (`QP_FUZZ_EXAMPLES`, default 20) | every push; 500 examples nightly |
+| Version matrix | `QP_TEST_POSTGRES_IMAGE=postgres:latest QP_TEST_MONGO_IMAGE=mongo:8 uv run pytest -m integration` | every push |
+| Soak test (collector memory, cycle times) | `make soak` (needs `make demo`) | nightly, one hour |
+
 **Windows:** psycopg's async mode can't use Windows' default event loop. The tests handle this
 themselves. To run the API outside Docker on Windows, use `--reload` (as above), which makes
 uvicorn use a compatible loop, or run it with `make demo`.
@@ -157,6 +197,15 @@ uvicorn use a compatible loop, or run it with `make demo`.
   behaviour across the backend and frontend, as of today.
 - [Demo checklist](docs/demo-checklist.md): the scripted demo, run by hand before every release.
 - [Architecture decision records](docs/adr/): why the stack looks the way it does.
+
+## AI evaluation
+
+`make ai-eval` asks the configured model to explain and draft a fix for each of the seven
+planted problems (saved evidence bundles in `evals/bundles/`), runs the same checks as the API,
+and scores the answers: the right cause named, citations valid, no forbidden action. It needs a
+real key (`QP_AI_EVAL_API_KEY`, `QP_AI_EVAL_MODEL`) and writes `evals/results.md`.
+
+Scores: not yet recorded. `uv run python scripts/ai_eval.py --fake` checks the harness without a key.
 
 ## Layout
 
@@ -173,16 +222,16 @@ query_pulse/
   workload/       fingerprints, observations, table stats, plans; explorer, plan and trend APIs;
                   MongoDB shape normaliser (mongo_shape.py) and plan redaction (mongo_plan.py)
   findings/       rules (rules.py), rule engine and lifecycle (engine.py), findings API
+  ai/             evidence bundles, the provider interface (OpenAI, fake), citation checks, API
   demo/           demo seed and workload (not part of the product)
   adapters/       PostgreSQL and MongoDB adapters (connect, capabilities, collection reads)
   crypto.py       Fernet encryption for stored credentials
 migrations/       Alembic migrations
 demo/             demo database init scripts
-scripts/          export_openapi.py
+scripts/          export_openapi.py, ai_eval.py, save_eval_bundles.py, soak.py
+evals/            the AI evaluation set and its results
 tests/
 ```
-
-The planned `ai/` package is added in Phase 7.
 
 ## Conventions
 

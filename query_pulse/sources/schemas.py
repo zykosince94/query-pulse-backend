@@ -71,7 +71,7 @@ class ConnectionTestRequest(ConnectionFields):
     # When editing an existing source, the form usually doesn't have the password: pass
     # `source_id` and omit `password` to test with the stored one.
     password: SecretStr | None = Field(default=None, max_length=1024)
-    source_id: int | None = None
+    source_id: int | None = Field(default=None, ge=1, le=2**31 - 1)
 
 
 class CapabilityOut(BaseModel):

@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from query_pulse.accounts.dependencies import SessionDep, Writer, current_user
 from query_pulse.adapters import AdapterError
 from query_pulse.adapters.postgres import PostgresAdapter
+from query_pulse.api_types import Id, IdQuery, invalid
 from query_pulse.collector.models import CollectorHeartbeat
 from query_pulse.config import Settings
 from query_pulse.crypto import CredentialCipher
@@ -35,7 +36,7 @@ Minutes = Annotated[int, Query(ge=5, le=1440, description="Window length in minu
 
 
 @router.get("/sources/{source_id}/trend", response_model=SourceTrend, operation_id="getSourceTrend")
-async def source_trend(source_id: int, session: SessionDep, minutes: Minutes = 60) -> SourceTrend:
+async def source_trend(source_id: Id, session: SessionDep, minutes: Minutes = 60) -> SourceTrend:
     """Calls and execution time per minute for one source."""
     if await session.get(DataSource, source_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Source not found")
@@ -48,7 +49,7 @@ async def source_trend(source_id: int, session: SessionDep, minutes: Minutes = 6
     response_model=ServerMetrics | None,
     operation_id="getSourceServerMetrics",
 )
-async def source_server_metrics(source_id: int, session: SessionDep) -> ServerMetrics | None:
+async def source_server_metrics(source_id: Id, session: SessionDep) -> ServerMetrics | None:
     """A MongoDB source's latest serverStatus sample and operation rates (null if none yet)."""
     if await session.get(DataSource, source_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Source not found")
@@ -152,16 +153,16 @@ def time_window(
 ) -> Window:
     """Either a relative window (`minutes`) or an absolute one (`start`, optional `end`)."""
     if minutes is not None and (start is not None or end is not None):
-        raise HTTPException(422, detail="Give either minutes or start/end, not both")
+        raise invalid(("query", "minutes"), "Give either minutes or start/end, not both")
     if start is None:
         if end is not None:
-            raise HTTPException(422, detail="end needs a start")
+            raise invalid(("query", "end"), "end needs a start")
         return Window.last(minutes or 60)
     window = Window(service.as_utc(start), service.as_utc(end) if end else datetime.now(UTC))
     if window.end - window.start < timedelta(minutes=1):
-        raise HTTPException(422, detail="The window must be at least one minute long")
+        raise invalid(("query", "start"), "The window must be at least one minute long")
     if window.end - window.start > MAX_WINDOW:
-        raise HTTPException(422, detail=f"The window can't be longer than {MAX_WINDOW.days} days")
+        raise invalid(("query", "start"), f"The window can't be longer than {MAX_WINDOW.days} days")
     return window
 
 
@@ -183,7 +184,7 @@ async def list_operations(
     session: SessionDep,
     window: WindowDep,
     sort: SortKey = "total_time",
-    source_id: Annotated[int | None, Query(ge=1)] = None,
+    source_id: IdQuery = None,
     q: Annotated[
         str | None, Query(max_length=200, description="Keep statements containing this text")
     ] = None,
@@ -199,7 +200,7 @@ async def list_operations(
     "/operations/{operation_id}", response_model=OperationDetail, operation_id="getOperation"
 )
 async def get_operation(
-    operation_id: int, session: SessionDep, window: WindowDep
+    operation_id: Id, session: SessionDep, window: WindowDep
 ) -> OperationDetail:
     """One operation: its statement, metrics over the window and history per minute or hour."""
     fingerprint, source = await _operation_or_404(session, operation_id)
@@ -219,7 +220,7 @@ async def get_operation(
     response_model=OperationPlan,
     operation_id="getOperationPlan",
 )
-async def get_operation_plan(operation_id: int, session: SessionDep) -> OperationPlan:
+async def get_operation_plan(operation_id: Id, session: SessionDep) -> OperationPlan:
     """The latest generic plan for an operation, or why there isn't one."""
     fingerprint, source = await _operation_or_404(session, operation_id)
     return plans.to_out(fingerprint, source, await plans.latest_plan(session, fingerprint.id))
@@ -232,7 +233,7 @@ async def get_operation_plan(operation_id: int, session: SessionDep) -> Operatio
     responses={502: {"description": "The source couldn't be reached to plan the statement"}},
 )
 async def capture_operation_plan(
-    operation_id: int, request: Request, session: SessionDep, _: Writer
+    operation_id: Id, request: Request, session: SessionDep, _: Writer
 ) -> OperationPlan:
     """Plan the statement again now with EXPLAIN (GENERIC_PLAN). Never executes it.
 
@@ -262,7 +263,7 @@ async def capture_operation_plan(
 
 
 @router.get("/plans/{plan_id}", response_model=OperationPlan, operation_id="getPlan")
-async def get_plan(plan_id: int, session: SessionDep) -> OperationPlan:
+async def get_plan(plan_id: Id, session: SessionDep) -> OperationPlan:
     """One stored plan by id, exactly as captured.
 
     Plans are immutable evidence: a finding cites the plan it was based on, and this returns

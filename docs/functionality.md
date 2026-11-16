@@ -4,8 +4,9 @@ What Query Pulse does today, across the backend (`query-pulse-backend`) and the 
 (`query-pulse-frontend`). This page describes **current behaviour only**. Planned work is listed
 at the end and marked as such.
 
-*As of 16 November 2026: Phases 1–6 ("Foundation", "Data sources", "PostgreSQL collector",
-"Workload explorer and plans", "Findings", "MongoDB"), release target v0.6.0.*
+*As of 16 November 2026: Phases 1–7 ("Foundation", "Data sources", "PostgreSQL collector",
+"Workload explorer and plans", "Findings", "MongoDB", "AI assistant and release"), release
+target v1.0.0.*
 
 ---
 
@@ -22,8 +23,9 @@ at the end and marked as such.
 | Plans | PostgreSQL generic plans (`EXPLAIN (GENERIC_PLAN)`) and MongoDB winning plans (`explain` at queryPlanner verbosity), never executed, captured in the background for each source's busiest operations and stored as evidence; PostgreSQL re-capture on demand (admin) | — |
 | Collector | Polls every enabled source. PostgreSQL: per-interval deltas from `pg_stat_statements` (resets, evictions, restarts), table/index statistics. MongoDB: the profiler's operations normalised into query shapes, `serverStatus` samples. Both: plans for busy operations, capability re-checks, retention | — |
 | Findings | Seven declarative rules over collected evidence (P1–P4, M1–M3); one finding per rule and target with confidence, evidence kind, facts, a suggested fix to review (SQL or a mongosh command, never run) and evidence links; dismiss, resolve, reopen; automatic resolution | — |
-| Settings | — | Placeholder page |
-| Ops | `/health`, `/ready`, OpenAPI docs, JSON logs with request IDs | — |
+| AI assistant | Optional and off by default: an admin saves an OpenAI key and model; then any finding can be explained or get a draft fix, from a redacted evidence bundle anyone can view, with every claim's citations checked; cached by evidence | — |
+| Settings | AI provider, model and masked key (save, turn on and off, delete the key); collection and retention values (read-only, from the environment) | — |
+| Ops | `/health`, `/ready`, OpenAPI docs, JSON logs with request IDs; API fuzzing, a version matrix and a nightly soak test | — |
 | Local stack | App database, demo PostgreSQL 16 with `pg_stat_statements` and a seeded e-commerce database with planted problems P1–P4, MongoDB 7 replica set with orders and products, its profiler on and planted problems M1–M3, the collector, and a demo workload | — |
 
 Query Pulse never writes to the databases it monitors. It connects only to test a connection,
@@ -289,10 +291,39 @@ Charts are drawn with ECharts, loaded only when a chart is first shown. Their co
 - Empty states say whether there are no open findings yet (and that rules run after each
   collection) or nothing matches the filters.
 
+**AI assistant on a finding** (collapsed until opened, so a list of findings loads nothing):
+- An advisory note: the rules raised the finding; AI only explains it and drafts a fix from the
+  evidence, citing it claim by claim.
+- With AI off: "AI is off" (the admin gets a link to Settings).
+- With AI on, the admin gets **Explain this finding** and **Draft a fix**. Everyone sees the
+  latest explanation and draft already given (provider, model, when), each claim with the ids
+  of the evidence it cites, claims without evidence flagged "Not backed by evidence", and a
+  note when the evidence has changed since. A draft's SQL or mongosh command has a Copy
+  button and says Query Pulse never runs it.
+- A rejected answer (cited evidence that wasn't sent, or a destructive draft) shows as an
+  error with the reason, never as advice. Provider errors (rate limit, quota, refused key) show
+  their message.
+- **View what is sent** shows the exact evidence bundle (how many items; literals as `?`; no
+  credentials, hosts or connection details), for everyone, even with AI off.
+
 **On the operation page:** the operation's findings (any status) appear above the plan. Opened
 from a finding's plan link, the plan viewer shows "Showing plan #N, the one a finding cites"
 (with when it was captured), outlines the cited node with "Cited by the finding", hides
 re-capture, and offers **Show the latest plan**.
+
+### 3.10 Settings (`/settings`)
+
+- **AI assistant**: On/Off badge; provider (OpenAI); model (free text: the id from the
+  provider's docs); API key (a password field; when a key is saved it shows only its last four
+  characters, and leaving the field empty keeps it); "Turn the AI assistant on". **Save**
+  checks the key and model with the provider when turning on ("Checking the key…") and saves
+  nothing if they're refused, showing why. **Delete the key** turns AI off. Changing the
+  provider asks for the key again. Below: how many provider requests this server has made
+  since it started.
+- **Collection and retention**: the collection interval, how often the rules run and how far
+  back they look, and how long data is kept, read-only, with a note that they come from the
+  backend's environment.
+- The demo user sees both cards read-only.
 
 ---
 
@@ -539,6 +570,42 @@ each with a `label` and `available` (false once retention deleted what it points
 however often the rule fires again; resolved ones reopen if the problem shows up in evidence
 collected after the resolution (§6).
 
+### 4.7 AI assistant and settings
+
+| Method and path | Access | Success | Errors |
+|---|---|---|---|
+| `GET /api/ai/settings` | Session | `200 {"enabled", "provider", "model", "key_set", "key_hint", "providers", "provider_calls", "updated_at"}` | `401` |
+| `PUT /api/ai/settings` | Admin | `200` the settings. Body `{"provider", "model", "api_key"?, "enabled"}`; omit `api_key` to keep the saved one | `400` (unknown provider; no key to turn on with; the provider refused the key or model; the provider changed without re-entering the key), `401`, `403`, `422` |
+| `DELETE /api/ai/settings/key` | Admin | `200` the settings, key removed and AI off | `401`, `403` |
+| `GET /api/settings` | Session | `200 {"retention_days", "collector_interval_seconds", "rules_interval_seconds", "rules_window_minutes"}` | `401` |
+| `GET /api/findings/{finding_id}/ai/bundle` | Session | `200 {"finding_id", "evidence_hash", "items", "document"}`: exactly what would be sent | `401`, `404`, `422` |
+| `GET /api/findings/{finding_id}/ai` | Session | `200 {"enabled", "explain", "draft"}`: the latest answers (or null) | `401`, `404`, `422` |
+| `POST /api/findings/{finding_id}/ai/{kind}` | Admin | `200` an answer; `kind` is `explain` or `draft` | `401`, `403`, `404`, `409` (AI is off), `422`, `502` (the provider couldn't answer; the detail says why) |
+
+- `key_hint` is `…` plus the key's last four characters; the key itself is never returned.
+  `provider_calls` counts every provider request this API process has made.
+- **An answer**: `finding_id`, `kind`, `status` (`ok` or `rejected`), `error` (why it was
+  rejected), `summary` and `claims` (each `{"text", "evidence": [ids], "cited"}`), `caveats`,
+  `language` and `code` (drafts: `sql` or `mongosh`), `provider`, `model`, `evidence_hash`,
+  `current` (false once the finding's evidence has changed materially), `cached`, `created_at`.
+- **Checks on every answer:** the JSON must match the schema; any cited id not in the bundle
+  rejects the answer (QP-AC-27); claims with no citation are kept but `cited: false`; a draft
+  containing DROP TABLE/DATABASE/SCHEMA/ROLE, TRUNCATE, DELETE, UPDATE, INSERT, ALTER
+  SYSTEM/ROLE, GRANT/REVOKE, or MongoDB `drop`, `dropDatabase`, data-changing calls or
+  setting changes is rejected. `DROP INDEX` is allowed (it's the unused-index fix).
+- **Caching:** `ok` answers are stored by (evidence hash, kind, provider, model) and reused
+  without a request. The hash covers a stable view of the bundle (numbers to two significant
+  figures, no sample timestamps), so per-minute drift doesn't make answers stale. Rejected
+  answers aren't stored.
+- **The evidence bundle** (`bundle_version` 1): items `rule`, `finding` (title, confidence,
+  evidence kind), `source` (engine and version only), `operation` (the statement or shape and
+  its metrics over the finding's window), `fact:<key>` per fact, `plan:<path>` per plan node or
+  stage, and `table:<schema.table>` / `index:<schema.index>` samples. SQL literals become `?`
+  (`'...'` → `'?'`); the finding's free-text summary isn't included.
+- **OpenAI** is called with Chat Completions and a strict JSON schema; the key is checked by
+  retrieving the model. Errors become messages (refused key, unknown model, no quota, rate
+  limit, server error, timeout) that never include the key or OpenAI's own error text.
+
 ---
 
 ## 5. Sessions and security behaviour
@@ -560,6 +627,8 @@ collected after the resolution (§6).
 | Logs | One JSON object per line (`QP_LOG_FORMAT=text` for development): `time`, `level`, `logger`, `message`, `request_id` and any structured fields. Each request gets an ID (the caller's `X-Request-ID` if it's 1–64 safe characters, otherwise a new one), returned in the `X-Request-ID` response header and on every log line written while handling it. One access line per request: method, path (never the query string), status, duration. Health checks aren't logged. |
 | Planning collected statements | Statement text comes from `pg_stat_statements`, which any user of the monitored database can influence. EXPLAIN without ANALYZE never executes it and the session is read-only, but a second statement after a `;` would run, so text containing a `;` (other than a trailing one) is never sent. Only SELECT, INSERT, UPDATE, DELETE, MERGE, VALUES, TABLE and WITH are planned, and cut-off text (10,000+ characters) isn't. |
 | MongoDB query values | Never stored or logged (ADR 0010). Profiled commands become shapes (values `?`); the newest command of each read shape is held only in collector memory, per source and tied to the server it came from, for `explain`; explain output is redacted before storing; explain and collection errors keep only MongoDB's error code. PyMongo's debug loggers, which print whole commands and replies, are held at WARNING whatever `QP_LOG_LEVEL` says. An integration test checks that a marker value used in profiled queries appears nowhere in the app database or logs. |
+| AI | Off by default; no provider request until an admin saves a key and turns it on (QP-AC-26 checks the counter stays at 0 with AI off). The key is Fernet-encrypted, shown only by its last four characters, only sent to the provider it was saved for, never returned or logged (a marker-key test checks responses and logs). Evidence bundles never hold literals, credentials or connection details (QP-AC-28). Only the admin can ask (it costs money). Nothing an answer contains is ever executed. The fake provider is refused in production. |
+| Request ids | Path ids are bounded to the database's `integer` (1 to 2,147,483,647): a larger id is a 422, not a server error (found by fuzzing). Every 422 has FastAPI's validation shape (`detail` is a list). |
 | Secrets in memory | Held as `SecretStr`, shown as `**********` in logs and error output |
 | Revoking sessions | Not possible per session. Changing `QP_SESSION_SECRET` signs everyone out. |
 
@@ -753,6 +822,9 @@ error.
 | `QP_COLLECTOR_PROFILE_MAX_ENTRIES` | no | `10000` | MongoDB: profiler entries read per cycle at most (the rest wait for the next) |
 | `QP_COLLECTOR_SAMPLE_CACHE_SIZE` | no | `500` | MongoDB: read shapes per source whose newest command is held in collector memory for explain (never stored) |
 | `QP_RETENTION_DAYS` | no | `14` | Observations, table and server samples, and stale plans older than this are deleted daily |
+| `QP_OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Where OpenAI requests go (an OpenAI-compatible gateway works) |
+| `QP_AI_TIMEOUT_SECONDS` | no | `60` | How long an AI request may take (up to 300) |
+| `QP_AI_ALLOW_FAKE_PROVIDER` | no | `false` | Offers the fake provider (tests only); refused when `QP_ENVIRONMENT=prod` |
 | `QP_LOG_FORMAT` | no | `json` | `json` (one object per line) or `text` |
 | `QP_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` (PyMongo's loggers stay at WARNING) |
 | `QP_ALLOWED_ORIGINS` | no | — | Comma-separated extra origins allowed to make state-changing requests |
@@ -781,6 +853,10 @@ Values can come from the environment or a local `.env` file (see `.env.example`)
 | `python scripts/export_openapi.py [--check]` | Writes `openapi.json`, or fails if it is out of date |
 | `python -m query_pulse.collector` | Runs the collector (one instance only) |
 | `python -m query_pulse.demo.seed` / `.workload` | Seeds the demo database / runs the demo workload |
+| `python scripts/ai_eval.py [--fake]` (`make ai-eval`) | Scores the AI on the seven planted problems; needs `QP_AI_EVAL_API_KEY` (or `OPENAI_API_KEY`) and `QP_AI_EVAL_MODEL`, or `--fake`; writes `evals/results.md` |
+| `python scripts/save_eval_bundles.py` | Saves the demo's evidence bundles as the evaluation set |
+| `python scripts/soak.py --minutes 60` (`make soak`) | Soak test against the running stack: fails on memory growth, slow or failed cycles |
+| `pytest tests/test_fuzz.py` (`make fuzz`) | Schemathesis over every API operation (`QP_FUZZ_EXAMPLES`) |
 
 The API container runs the first three in order on every start.
 
@@ -861,13 +937,24 @@ Push backend API changes first, then regenerate and push the frontend.
 | QP-AC-24: with profiling off, the UI shows the capability gap and fix, not an empty list | Done | `tests/integration/test_mongo_collector.py::test_profiling_off_reports_the_gap_and_collects_nothing`; `test_mongo_cycle.py` (switching it off is noticed and listed as a gap); Vitest `mongodb.test.tsx` ("profiling off") |
 | QP-AC-25: PostgreSQL and MongoDB operations appear in one explorer, each opening its own plan viewer | Done | Playwright `mongodb.spec.ts` (full stack); backend acceptance `test_both_engines_share_one_explorer_with_their_own_plans`; Vitest `mongodb.test.tsx` |
 
+| QP-AC-26: with AI disabled, the whole Playwright suite passes and no provider call is made | Done | Frontend CI runs every Playwright journey against the stack with AI off; `e2e/ai-and-a11y.spec.ts` checks the AI features say so and `provider_calls` is 0; backend `test_ai.py::test_ai_is_off_by_default_and_makes_no_provider_call` |
+| QP-AC-27: a response citing an evidence id not in the bundle is rejected and shown as an error | Done | `test_ai.py` (the checker and the API, with the fake provider citing `plan:9.9.9`); Vitest `ai.test.tsx` (shown as an error, not advice) |
+| QP-AC-28: evidence bundles never contain literals, credentials or connection strings | Done | `test_ai.py`: bundles for P1–P4 and M1–M3 built from real plans with planted literals; the API bundle for every finding on a source with a marker password, host and username |
+| QP-AC-29: `make ai-eval` runs over all seven bundles and reports scores; scores are in the README | Harness done; scores pending | `scripts/ai_eval.py` over `evals/bundles/` (saved from the demo); `test_ai.py::test_the_eval_runs_over_all_seven_saved_bundles` with the fake provider. The real run needs a key and is manual |
+| QP-AC-30: a new developer reaches a working demo from the README alone | Pending (manual) | The fresh-machine release check, run by hand before tagging v1.0.0 |
+
 Phase 1 close-out (Origin check, login rate limit, JSON logs with request IDs) is covered by
-`test_hardening.py`. No stored MongoDB values (ADR 0010) is covered by the marker-value check
+`test_hardening.py`. Phase 7 hardening: `test_fuzz.py` (Schemathesis over all 34 operations;
+it found ids beyond the `integer` column causing 500s and 422s with the wrong shape, both
+fixed, with regression tests in `test_hardening.py`), the version matrix (CI `versions` job),
+the nightly soak test (`.github/workflows/nightly.yml`), and an axe accessibility check of every
+main screen in light and dark (`e2e/ai-and-a11y.spec.ts`; it found low contrast on muted text,
+fixed in the design tokens). No stored MongoDB values (ADR 0010) is covered by the marker-value check
 in `test_mongo_collector.py`, redaction tests on every captured plan in `test_mongodb.py`, and
 `test_mongo_cycle.py`.
 
-Test counts: 340 backend unit, 28 backend integration and 6 backend acceptance (pytest), 96
-frontend (Vitest), 11 end-to-end (Playwright).
+Test counts: 412 backend unit (one of them fuzzes all 34 operations), 28 backend integration and 6
+backend acceptance (pytest), 109 frontend (Vitest), 15 end-to-end (Playwright).
 
 ---
 
@@ -875,4 +962,4 @@ frontend (Vitest), 11 end-to-end (Playwright).
 
 | Planned | Phase | Release |
 |---|---|---|
-| Optional AI explanations and drafts, hardening | 7 | v1.0.0 |
+| Release deliverables (manual): the real `make ai-eval` run and its scores in the README, the fresh-machine check, tags v0.1.0–v1.0.0, the demo video and README GIF, blog posts | 7 | v1.0.0 |

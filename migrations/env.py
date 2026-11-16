@@ -13,6 +13,7 @@ from alembic import context
 from sqlalchemy.engine import Connection
 
 from query_pulse.accounts import models as _accounts_models  # noqa: F401  (registers tables)
+from query_pulse.ai import models as _ai_models  # noqa: F401
 from query_pulse.collector import models as _collector_models  # noqa: F401
 from query_pulse.db import Base, create_engine
 from query_pulse.sources import models as _sources_models  # noqa: F401

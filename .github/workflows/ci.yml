@@ -26,8 +26,31 @@ jobs:
         run: uv run python scripts/export_openapi.py --check
       - run: uv run pytest
 
+  versions:
+    name: Integration on ${{ matrix.postgres }} / ${{ matrix.mongo }}
+    runs-on: ubuntu-latest
+    needs: checks
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest supported versions run in `checks`; this adds the newest of each.
+        include:
+          - postgres: postgres:latest
+            mongo: mongo:8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Integration tests
+        env:
+          QP_TEST_POSTGRES_IMAGE: ${{ matrix.postgres }}
+          QP_TEST_MONGO_IMAGE: ${{ matrix.mongo }}
+        run: uv run pytest -m integration
+
   stack:
-    name: Full stack, smoke and acceptance (QP-AC-01, QP-AC-14, QP-AC-15)
+    name: Full stack, smoke and acceptance
     runs-on: ubuntu-latest
     needs: checks
     steps:

@@ -7,6 +7,7 @@ adapter. Nothing here logs a password; log lines carry the source name and the e
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -220,14 +221,23 @@ def to_out(source: DataSource) -> SourceOut:
         has_password=bool(source.password_encrypted),
         server_version=source.server_version,
         status=source.status,
-        last_checked_at=source.last_checked_at,
+        last_checked_at=_utc(source.last_checked_at),
         last_error=source.last_error,
-        created_at=source.created_at,
-        updated_at=source.updated_at,
-        last_collected_at=state.last_success_at if (state := source.collector_state) else None,
+        created_at=_utc(source.created_at),
+        updated_at=_utc(source.updated_at),
+        last_collected_at=_utc(state.last_success_at)
+        if (state := source.collector_state)
+        else None,
         warnings=source_warnings(source.collector_state, source.engine.value),
         capability_gaps=[_capability_out(c) for c in source.capabilities if not c.available],
     )
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """SQLite returns naive datetimes (stored as UTC); the API always says the zone."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
 def _capability_out(c: SourceCapability) -> CapabilityOut:
