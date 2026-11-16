@@ -88,6 +88,8 @@ class RelationStat(Base):
     live_rows: Mapped[int | None] = mapped_column(BigInteger)
     dead_rows: Mapped[int | None] = mapped_column(BigInteger)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
+    # Indexes: UNIQUE or PRIMARY KEY (None for tables, and for samples taken before v0.5.0).
+    is_unique: Mapped[bool | None] = mapped_column(Boolean)
 
 
 class Plan(Base):

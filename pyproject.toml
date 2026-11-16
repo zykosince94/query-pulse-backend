@@ -1,6 +1,6 @@
 [project]
 name = "query-pulse-backend"
-version = "0.4.0"
+version = "0.5.0"
 description = "Query Pulse backend: database performance intelligence for PostgreSQL and MongoDB."
 readme = "README.md"
 requires-python = ">=3.12"

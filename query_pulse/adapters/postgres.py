@@ -144,6 +144,9 @@ class RelationRow:
     live_rows: int | None
     dead_rows: int | None
     size_bytes: int
+    # Indexes only: does it enforce uniqueness (UNIQUE or PRIMARY KEY)? Such an index is
+    # needed for correctness even if no query ever scans it.
+    is_unique: bool | None = None
 
 
 # Statement text longer than this is cut off, and a cut-off statement can't be planned.
@@ -163,12 +166,13 @@ STATEMENTS_INFO_SQL = "SELECT stats_reset, dealloc FROM pg_stat_statements_info"
 
 RELATIONS_SQL = """
 SELECT 'table', schemaname, relname, NULL, seq_scan, idx_scan, n_live_tup, n_dead_tup,
-       pg_total_relation_size(relid)
+       pg_total_relation_size(relid), NULL::boolean
 FROM pg_stat_user_tables
 UNION ALL
-SELECT 'index', schemaname, relname, indexrelname, NULL, idx_scan, NULL, NULL,
-       pg_relation_size(indexrelid)
-FROM pg_stat_user_indexes
+SELECT 'index', s.schemaname, s.relname, s.indexrelname, NULL, s.idx_scan, NULL, NULL,
+       pg_relation_size(s.indexrelid), i.indisunique
+FROM pg_stat_user_indexes AS s
+JOIN pg_index AS i ON i.indexrelid = s.indexrelid
 """
 
 
@@ -340,6 +344,7 @@ class PostgresAdapter:
                 live_rows=r[6],
                 dead_rows=r[7],
                 size_bytes=int(r[8]),
+                is_unique=r[9],
             )
             for r in rows
         ]

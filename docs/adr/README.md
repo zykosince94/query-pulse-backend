@@ -13,3 +13,4 @@ costs. When a decision changes, a new record supersedes the old one.
 | [0006](0006-one-collector-instance.md) | One collector instance |
 | [0007](0007-fernet-credentials.md) | Fernet for stored credentials |
 | [0008](0008-rules-before-ai.md) | Rules detect problems; AI only explains |
+| [0009](0009-finding-lifecycle.md) | One finding per rule and target; dismissals stick |

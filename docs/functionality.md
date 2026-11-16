@@ -4,8 +4,8 @@ What Query Pulse does today, across the backend (`query-pulse-backend`) and the 
 (`query-pulse-frontend`). This page describes **current behaviour only**. Planned work is listed
 at the end and marked as such.
 
-*As of 16 November 2026: Phases 1–4 ("Foundation", "Data sources", "PostgreSQL collector",
-"Workload explorer and plans"), release target v0.4.0.*
+*As of 16 November 2026: Phases 1–5 ("Foundation", "Data sources", "PostgreSQL collector",
+"Workload explorer and plans", "Findings"), release target v0.5.0.*
 
 ---
 
@@ -21,7 +21,8 @@ at the end and marked as such.
 | Workload | Health strip; the explorer ranking operations by total time, mean or calls over a time range, with filters kept in the URL; operation detail with metric history; the PostgreSQL plan viewer | — |
 | Plans | Generic plans (`EXPLAIN (GENERIC_PLAN)`, never executed) captured in the background for each source's busiest operations, stored as evidence; re-capture on demand (admin) | MongoDB plans (Phase 6) |
 | Collector | Polls every enabled PostgreSQL source, stores per-interval deltas from `pg_stat_statements`, handles resets, evictions and restarts, samples table/index statistics, plans busy operations, re-checks capabilities, deletes old data | MongoDB collection (Phase 6) |
-| Findings, Settings | — | Placeholder pages |
+| Findings | Four declarative rules over collected evidence (P1–P4); one finding per rule and target with confidence, evidence kind, facts, suggested SQL (never run) and evidence links; dismiss, resolve, reopen; automatic resolution | MongoDB rules (Phase 6) |
+| Settings | — | Placeholder page |
 | Ops | `/health`, `/ready`, OpenAPI docs, JSON logs with request IDs | — |
 | Local stack | App database, demo PostgreSQL 16 with `pg_stat_statements` and a seeded e-commerce database with planted problems P1–P4, MongoDB 7 replica set, the collector, and a demo workload | — |
 
@@ -64,12 +65,12 @@ works without CORS.
 |---|---|---|
 | `/login` | Public | Sign-in form; "Try the demo" when enabled |
 | `/` | Signed in | Workload: the source health strip and the explorer. Search params: `range`, `from`, `to`, `sort`, `source`, `q` |
-| `/operations/:id` | Signed in | One operation: statement, metrics, history and plan. Search params: `range`, `from`, `to` |
+| `/operations/:id` | Signed in | One operation: statement, metrics, history, findings and plan. Search params: `range`, `from`, `to`, and `plan`/`node` (the plan and node a finding cites) |
 | `/sources` | Signed in | Data sources list |
 | `/sources/new` | Signed in (admin) | Add a source; the demo user sees a read-only notice |
 | `/sources/:id` | Signed in | Source detail and capability checklist |
 | `/sources/:id/edit` | Signed in (admin) | Edit a source; the demo user sees a read-only notice |
-| `/findings` | Signed in | Findings (placeholder, Phase 5) |
+| `/findings` | Signed in | Findings. Search params: `status` (default open), `source`, `rule` |
 | `/settings` | Signed in | Settings (placeholder, Phase 7) |
 | anything else | Signed in | "Page not found" with a link back to the workload |
 
@@ -97,7 +98,8 @@ works without CORS.
 ### 3.4 App shell
 
 - **Sidebar** (a horizontal bar on narrow screens) with Workload, Data sources, Findings and
-  Settings. The current page is highlighted and marked `aria-current="page"`.
+  Settings. The current page is highlighted and marked `aria-current="page"`. Findings shows
+  the number of open findings when there are any.
 - **Header**: "Signed in as *username*", a **"Read-only demo"** badge for the demo user, and
   **Sign out**.
 - **Sign out** ends the server session, clears all cached data in the browser, and shows the
@@ -222,6 +224,36 @@ works without CORS.
 
 Charts are drawn with ECharts, loaded only when a chart is first shown. Their colour is the
 `--chart-1` token, checked against the card colour in light and dark mode.
+
+### 3.9 Findings
+
+**Findings page (`/findings`)**
+- Tabs for **Open** (default), **Dismissed** and **Resolved**, each with its count, plus
+  **Source** and **Rule** filters. All three live in the URL.
+- One card per finding, most confident and most recently seen first:
+  - the rule id, the **confidence** (high, medium, low), and the evidence kind: **Plan
+    evidence** (read from a captured plan) or **Statistics heuristic** (inferred from counters;
+    check before acting);
+  - the title, the target (the statement, linking to its operation, or the index name), its
+    source, and a plain-language summary with the actual numbers;
+  - **facts**: the values behind it (share of time, calls, table rows, selectivity, index size,
+    how long it was watched), kept with the finding so it stays readable after retention;
+  - **Suggested next step**, with SQL to review and a Copy button, and the note that Query Pulse
+    never runs it;
+  - **Evidence** links: the observation window (opens the operation over that exact range), the
+    **cited plan** (opens the operation showing that exact plan with the cited node outlined),
+    and table or index samples (shown as text). A link whose data retention has deleted says
+    "(no longer stored)";
+  - first and last seen, and for the admin **Mark resolved** / **Dismiss** (open findings) or
+    **Reopen** (dismissed and resolved ones). A finding resolved or reopened by the rules says
+    "automatically". The demo user sees no buttons.
+- Empty states say whether there are no open findings yet (and that rules run after each
+  collection) or nothing matches the filters.
+
+**On the operation page:** the operation's findings (any status) appear above the plan. Opened
+from a finding's plan link, the plan viewer shows "Showing plan #N, the one a finding cites"
+(with when it was captured), outlines the cited node with "Cited by the finding", hides
+re-capture, and offers **Show the latest plan**.
 
 ---
 
@@ -420,6 +452,37 @@ A plan node has `path` (its position, e.g. `0.1.0`, stable for a given plan), `n
 `join_type`, `strategy`, `parent_relationship`, `details` (every other value PostgreSQL
 reported, as text) and `children`.
 
+`GET /api/plans/{plan_id}` (session; `404` if unknown) returns one stored plan by id in the same
+shape: the exact plan a finding cites, even after a newer plan was captured.
+
+### 4.6 Findings
+
+| Method and path | Access | Success | Errors |
+|---|---|---|---|
+| `GET /api/findings` | Session | `200 {"counts": {"open", "resolved", "dismissed"}, "findings": [...]}` | `401`, `422` |
+| `GET /api/findings/{finding_id}` | Session | `200` one finding | `401`, `404` |
+| `PATCH /api/findings/{finding_id}` | Admin | `200` the finding, body `{"status": "open" \| "dismissed" \| "resolved"}` | `401`, `403`, `404`, `422` |
+| `GET /api/rules` | Session | `200` the rule catalogue: `id`, `title`, `description`, `evidence_strength`, `confidence`, `thresholds` | `401` |
+
+**List filters:** `status`, `source_id`, `rule_id`, `operation_id` (findings about that
+operation). `counts` covers every status under the other filters. Order: confidence (high
+first), then most recently seen.
+
+**A finding:** `id`, `source_id`, `source_name`, `rule_id`, `rule_title`, `target_kind`
+(`operation` or `index`), `target_key`, `fingerprint_id`, `relation`, `query` (for operations),
+`title`, `summary`, `confidence`, `evidence_strength` (`plan` or `statistics`),
+`suggested_action`, `action_sql` (to review and run by hand; never executed), `facts` (`key`,
+`label`, `value`), `evidence`, `status`, `status_changed_by` (`rules` or `user`),
+`status_changed_at`, `first_seen_at`, `last_seen_at`, `resolved_at`.
+
+**Evidence items:** `kind` = `operation` (observations of `fingerprint_id` between `start` and
+`end`), `plan` (`plan_id` and the cited `node_path`) or `relation_stat` (`relation_stat_id`),
+each with a `label` and `available` (false once retention deleted what it points at).
+
+**Status changes** by the admin are recorded as `user`. Dismissed findings stay dismissed
+however often the rule fires again; resolved ones reopen if the problem shows up in evidence
+collected after the resolution (§6).
+
 ---
 
 ## 5. Sessions and security behaviour
@@ -483,8 +546,34 @@ are evidence that Phase 5's findings will cite). Statements that can't be planne
 the reason. Planning gets at most a third of the cycle time limit; what doesn't fit waits for
 the next cycle, and a planning failure never fails collection.
 
+**Findings:** after a successful cycle, about every `QP_RULES_INTERVAL_SECONDS` (60; every
+cycle in the demo), the rules run for the source over the last `QP_RULES_WINDOW_MINUTES` (60).
+They run in their own session after the cycle commits, so a rule failure never affects
+collection. The rules:
+
+| Rule | Planted problem | Fires when | Evidence | Confidence |
+|---|---|---|---|---|
+| `PG-SEQSCAN-HOT` | P1 | An operation with ≥ 10% of the source's execution time and ≥ 10 calls whose latest captured plan has a sequential scan with a filter (not a LIKE) on a table of ≥ 10,000 rows, keeping ≤ 5% of it | Plan | High |
+| `PG-SORT-NO-INDEX` | P2 | ≥ 10 calls, and the plan has a Limit above a Sort above a full scan of a table of ≥ 10,000 rows | Plan | High |
+| `PG-LEADING-WILDCARD` | P3 | ≥ 10 calls, and the plan answers a LIKE/ILIKE with a scan of a table of ≥ 1,000 rows. Medium confidence when the pattern is a parameter (its value isn't recorded), high when the plan shows a literal starting with `%`; anchored literals (`'abc%'`) don't fire | Plan | Medium / high |
+| `PG-UNUSED-INDEX` | P4 | A non-unique index of ≥ 1 MB whose every sample in the last `QP_RULES_UNUSED_INDEX_WINDOW_HOURS` (24) shows zero scans, over at least `QP_RULES_UNUSED_INDEX_MIN_SPAN_SECONDS` (1 hour; 2 minutes in the demo). UNIQUE and PRIMARY KEY indexes never fire (they enforce constraints) | Statistics | Medium |
+
+The rules are disjoint, so one problem gives one finding. Their suggested SQL is
+`CREATE INDEX CONCURRENTLY …` for P1 and P2, `pg_trgm` and a GIN index for P3, and
+`DROP INDEX CONCURRENTLY …` for P4, each with its trade-offs.
+
+**Finding lifecycle:** one row per (source, rule, target), enforced by a unique constraint.
+
+| Situation | What happens |
+|---|---|
+| Detected, no finding yet | Created, open |
+| Detected, open | Evidence, facts and last seen refreshed |
+| Detected, dismissed | Refreshed, **stays dismissed** |
+| Detected, resolved | Reopened, but only if the evidence was collected after the resolution (so a just-added index isn't contradicted by the plan on record) |
+| Not detected, open | Resolved automatically once not seen for `QP_FINDING_RESOLVE_AFTER_SECONDS` (3600) |
+
 **Other jobs:** table and index statistics (`pg_stat_user_tables`, `pg_stat_user_indexes`:
-scans, live/dead rows, sizes) every `QP_COLLECTOR_RELATION_STATS_SECONDS` (300); capability
+scans, live/dead rows, sizes, and whether an index is UNIQUE or a PRIMARY KEY) every `QP_COLLECTOR_RELATION_STATS_SECONDS` (300); capability
 re-checks every `QP_COLLECTOR_CAPABILITY_CHECK_SECONDS` (900), so enabling an extension later
 turns its feature on; and once a day it deletes observations, table samples and plans (not
 re-checked within the period) older than `QP_RETENTION_DAYS` (14).
@@ -510,7 +599,7 @@ running them next to healthy controls:
 |---|---|---|
 | P1 | Orders looked up by `customer_id`, which has no index (sequential scan) | Customer by primary key |
 | P2 | Latest 20 orders sorted by `created_at`, which has no index | Order by primary key |
-| P3 | Product search with `LIKE '%term%'` (a leading wildcard can't use a b-tree) | Products by indexed category |
+| P3 | Product search with `LIKE '%term%'` (a leading wildcard can't use a b-tree) | Products by indexed category (40 categories, about 2.5% each, so the planner uses the index) |
 | P4 | `idx_orders_legacy_lookup`: a large index nothing uses | Orders by primary-key range |
 
 The seed only fills empty tables, so it's safe to rerun. On the running demo, P1 ranks first by
@@ -548,6 +637,11 @@ error.
 | `QP_ALLOWED_ORIGINS` | no | — | Comma-separated extra origins allowed to make state-changing requests |
 | `QP_LOGIN_MAX_FAILURES` | no | `10` | Failed sign-ins per client before sign-in is refused for a while |
 | `QP_LOGIN_WINDOW_SECONDS` | no | `300` | The window those failures are counted in |
+| `QP_RULES_INTERVAL_SECONDS` | no | `60` | How often each source's rules run (15 in the compose demo) |
+| `QP_RULES_WINDOW_MINUTES` | no | `60` | The window the rules look at |
+| `QP_RULES_UNUSED_INDEX_MIN_SPAN_SECONDS` | no | `3600` | How long an index must show zero scans to count as unused (120 in the demo) |
+| `QP_RULES_UNUSED_INDEX_WINDOW_HOURS` | no | `24` | How far back index samples are read |
+| `QP_FINDING_RESOLVE_AFTER_SECONDS` | no | `3600` | An open finding not seen for this long resolves itself |
 | `QP_ADMIN_USERNAME` | no | `admin` | Admin username |
 | `QP_ADMIN_PASSWORD` | **yes** | — | Admin password; at least 8 characters |
 | `QP_DEMO_ENABLED` | no | `false` | Creates the demo user and enables "Try the demo" |
@@ -576,7 +670,7 @@ The API container runs the first three in order on every start.
 | `app` | 8000 | The API | `admin` / `admin-demo-password`, `demo` / `demo-password` |
 | `app-db` | 5432 | PostgreSQL 16, the app's own database | `querypulse` / `querypulse` |
 | `demo-postgres` | 5433 | PostgreSQL 16 to be monitored, with `pg_stat_statements` and the read-only role `querypulse_monitor` (`pg_monitor`) | `postgres` / `postgres`; monitor: `querypulse_monitor` / `monitor` |
-| `collector` | — | The collector, polling every 15 s in the demo; healthy while its heartbeat is fresh | — |
+| `collector` | — | The collector, polling every 15 s in the demo, with rules every cycle and table/index samples every minute; healthy while its heartbeat is fresh | — |
 | `demo-workload` | — | Seeds the demo database once, then runs the P1–P4 workload at 20 queries/s | `shop_app` / `shop-app` (demo role) |
 | `mongo` | 27017 | MongoDB 7, single-node replica set `rs0`, to be monitored. From the host use `mongodb://localhost:27017/?directConnection=true`. | none |
 
@@ -636,11 +730,16 @@ Push backend API changes first, then regenerate and push the frontend.
 | QP-AC-16: a copied explorer URL reopens the same filters and time range | Done | Playwright `explorer.spec.ts` (opened in a second browser context); Vitest `explorer.test.tsx` |
 | QP-AC-17: journey home → P1 → plan viewer shows the sequential scan | Done | Playwright `explorer.spec.ts` |
 
+| QP-AC-18: P1, P2, P3 and P4 each produce exactly one open finding from their expected rule | Done | Backend acceptance `test_each_planted_problem_produces_exactly_one_finding_and_controls_none` (full stack); every rule with fixture evidence in `test_findings.py` |
+| QP-AC-19: healthy control queries produce no findings | Done | The same acceptance test (exactly four open findings); control fixtures for every rule in `test_findings.py` |
+| QP-AC-20: every finding's evidence links resolve to existing observations or plans | Done | `test_findings.py::test_findings_api_lists_filters_and_resolves_every_evidence_link`; acceptance `test_every_finding_evidence_link_resolves` |
+| QP-AC-21: dismissing a finding keeps it dismissed across later collection cycles | Done | `tests/integration/test_findings_cycles.py` (real PostgreSQL, three more cycles); engine unit test |
+
 Phase 1 close-out (Origin check, login rate limit, JSON logs with request IDs) is covered by
 `test_hardening.py`.
 
-Test counts: 198 backend unit, 25 backend integration and 2 backend acceptance (pytest), 71
-frontend (Vitest), 8 end-to-end (Playwright).
+Test counts: 257 backend unit, 26 backend integration and 4 backend acceptance (pytest), 83
+frontend (Vitest), 10 end-to-end (Playwright).
 
 ---
 
@@ -648,6 +747,5 @@ frontend (Vitest), 8 end-to-end (Playwright).
 
 | Planned | Phase | Release |
 |---|---|---|
-| Rule-based findings for P1–P4 (first showable release) | 5 | v0.5.0 |
 | MongoDB collection and findings | 6 | v0.6.0 |
 | Optional AI explanations and drafts, hardening | 7 | v1.0.0 |

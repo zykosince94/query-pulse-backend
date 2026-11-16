@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DSN = "postgresql://shop_app:shop-app@demo-postgres:5432/shop"
 TERMS = ["lamp", "chair", "kettle", "pack", "phone", "mug", "desk", "jacket", "ultra", "eco"]
-CATEGORIES = ["home", "office", "kitchen", "travel", "audio", "apparel"]
+CATEGORIES = [f"category-{n}" for n in range(1, 41)]  # matches the seed
 
 
 @dataclass(frozen=True)

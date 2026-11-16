@@ -21,11 +21,12 @@ from query_pulse.adapters.postgres import PostgresAdapter
 from query_pulse.config import Settings, get_settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import create_engine, create_sessionmaker
+from query_pulse.findings.router import router as findings_router
 from query_pulse.log import configure_logging
 from query_pulse.sources.router import router as sources_router
 from query_pulse.workload.router import router as workload_router
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -79,4 +80,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(auth_router)
     app.include_router(sources_router)
     app.include_router(workload_router)
+    app.include_router(findings_router)
     return app

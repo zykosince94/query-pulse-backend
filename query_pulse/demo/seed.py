@@ -45,7 +45,9 @@ CREATE TABLE IF NOT EXISTS products (
     price       numeric(10, 2) NOT NULL,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
--- Control for P3: category lookups use this index.
+-- Control for P3: category lookups use this index. With 40 categories each one is about
+-- 2.5% of products, selective enough that the planner prefers the index (with 6 it was
+-- 17%, and a sequential scan was rightly cheaper, leaving this index unused).
 CREATE INDEX IF NOT EXISTS idx_products_category ON products (category);
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -74,7 +76,7 @@ INSERT INTO products (name, category, price, created_at)
 SELECT (ARRAY['Classic', 'Ultra', 'Mini', 'Pro', 'Eco', 'Smart'])[1 + mod(g, 6)] || ' '
        || (ARRAY['Lamp', 'Chair', 'Kettle', 'Backpack', 'Headphones', 'Mug', 'Desk', 'Jacket'])[1 + mod(g, 8)]
        || ' ' || g,
-       (ARRAY['home', 'office', 'kitchen', 'travel', 'audio', 'apparel'])[1 + mod(g, 6)],
+       'category-' || (1 + mod(g, 40)),
        round((5 + random() * 495)::numeric, 2),
        now() - mod(g, 365) * interval '1 day'
 FROM generate_series(1, %(n)s) AS g

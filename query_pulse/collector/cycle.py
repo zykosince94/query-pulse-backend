@@ -30,6 +30,7 @@ from query_pulse.collector.warnings import eviction_warning
 from query_pulse.config import Settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import utcnow
+from query_pulse.findings import engine as findings
 from query_pulse.sources import service as sources
 from query_pulse.sources.models import DataSource, SourceEngine, SourceStatus
 from query_pulse.workload import plans
@@ -116,7 +117,37 @@ class Collector:
                 message = "Unexpected collector error; see the collector logs."
                 outcome = self._record_failure(source, state, message, ErrorCode.UNKNOWN, now)
             await session.commit()
-            return outcome
+        # Only after a real collection: a skipped source (disabled, or not PostgreSQL) has no
+        # new evidence, and judging its ageing data would "resolve" findings that aren't fixed.
+        if outcome.ok and not outcome.skipped:
+            await self.evaluate_rules(source_id)
+        return outcome
+
+    async def evaluate_rules(self, source_id: int, force: bool = False) -> bool:
+        """Run the findings rules for a source, about every `rules_interval_seconds`.
+
+        Runs after the cycle has committed, in its own session: the rules read what the
+        cycle stored, and a failure here can never undo or fail the collection itself.
+        Returns whether the rules ran.
+        """
+        async with self.sessionmaker() as session:
+            state = await session.get(CollectorState, source_id)
+            now = utcnow()
+            # 10% slack: cycles are jittered by ±10%, and a strict check would skip every
+            # other cycle when the two intervals are equal.
+            interval = self.settings.rules_interval_seconds * 0.9
+            if state is None or (not force and not _due(state.last_rules_at, interval, now)):
+                return False
+            try:
+                async with asyncio.timeout(self.settings.collector_cycle_timeout_seconds):
+                    await findings.evaluate_source(session, source_id, self.settings, now)
+                state.last_rules_at = now
+                await session.commit()
+            except Exception:  # noqa: BLE001 - findings must never break collection
+                logger.exception("findings: evaluation failed for source_id=%s", source_id)
+                await session.rollback()
+                return False
+        return True
 
     async def _collect(
         self, session: AsyncSession, source: DataSource, state: CollectorState, now: datetime

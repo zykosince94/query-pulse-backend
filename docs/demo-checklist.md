@@ -3,7 +3,7 @@
 The scripted demo. Run it by hand, step by step, before tagging every release, on a machine
 that starts from a fresh clone. Tick each step; if one fails, file an issue and don't tag.
 
-*Covers releases up to v0.4.0 (Phases 1–4).*
+*Covers releases up to v0.5.0 (Phases 1–5).*
 
 ## 0. Fresh start
 
@@ -62,7 +62,29 @@ Wait two or three minutes after adding the source, so several cycles have been c
 - [ ] Open P2 (latest orders): its plan has a Sort on `created_at DESC` under a Limit.
 - [ ] As the demo user, the plan is visible but there are no capture buttons.
 
-## 5. Hardening
+## 5. Findings (QP-AC-18 to QP-AC-21)
+
+About three minutes after adding the source (P4 needs two minutes of index samples):
+
+- [ ] The sidebar's **Findings** link shows **4**.
+- [ ] Findings → Open lists exactly four, one per planted problem:
+      **PG-SEQSCAN-HOT** on the `customer_id` lookup (P1), **PG-SORT-NO-INDEX** on "latest
+      orders" (P2), **PG-LEADING-WILDCARD** on the product search (P3, medium confidence, saying
+      the pattern itself isn't recorded) and **PG-UNUSED-INDEX** on
+      `public.idx_orders_legacy_lookup` (P4, "Statistics heuristic"). None for the controls.
+- [ ] Each card shows its facts with real numbers, the suggested SQL with Copy, "Query Pulse
+      never runs it for you", and its evidence links.
+- [ ] On the P1 card, click the **Plan #…** evidence link: the operation page shows "Showing plan
+      #…, the one a finding cites" with the Seq Scan outlined as "Cited by the finding". **Show
+      the latest plan** returns to the current plan.
+- [ ] Click the P1 card's observation-window link: the operation opens over that exact range.
+- [ ] The P1 operation page lists its finding above the plan.
+- [ ] **Dismiss** the P3 finding: it moves to the Dismissed tab and the count drops to 3. Wait a
+      minute (several rule runs): it's still dismissed. **Reopen** it.
+- [ ] Rule filter **PG-UNUSED-INDEX** shows one finding, and the URL keeps the filter.
+- [ ] As the demo user: findings are visible, with no status buttons.
+
+## 6. Hardening
 
 - [ ] A cross-site write is refused:
       `curl -i -X POST http://127.0.0.1:8000/api/auth/login -H 'Origin: https://evil.example' -H 'content-type: application/json' -d '{"username":"admin","password":"admin-demo-password"}'`
@@ -72,13 +94,13 @@ Wait two or three minutes after adding the source, so several cycles have been c
 - [ ] Every API response has an `X-Request-ID` header, and the app logs show that ID on the
       request's access line.
 
-## 6. Resilience (spot checks)
+## 7. Resilience (spot checks)
 
 - [ ] `docker compose stop demo-postgres`: within a couple of cycles the source turns Failing
       with a clear error. `docker compose start demo-postgres`: it recovers on its own.
 - [ ] `docker compose restart collector`: collection continues with no gap or spike in the charts.
 
-## 7. Wrap up
+## 8. Wrap up
 
 - [ ] Screenshots of new screens at desktop width and 375 px, in light and dark mode.
 - [ ] `docker compose down -v`.

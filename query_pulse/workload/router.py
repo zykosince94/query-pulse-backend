@@ -18,7 +18,7 @@ from query_pulse.sources.models import DataSource
 from query_pulse.sources.schemas import CollectorStatus
 from query_pulse.workload import explorer, plans, service
 from query_pulse.workload.explorer import MAX_WINDOW, Window
-from query_pulse.workload.models import Fingerprint
+from query_pulse.workload.models import Fingerprint, Plan
 from query_pulse.workload.schemas import (
     OperationDetail,
     OperationList,
@@ -204,3 +204,17 @@ async def capture_operation_plan(
     row = await plans.record_plan(session, fingerprint, plan, reason, utcnow())
     await session.commit()
     return plans.to_out(fingerprint, source, row)
+
+
+@router.get("/plans/{plan_id}", response_model=OperationPlan, operation_id="getPlan")
+async def get_plan(plan_id: int, session: SessionDep) -> OperationPlan:
+    """One stored plan by id, exactly as captured.
+
+    Plans are immutable evidence: a finding cites the plan it was based on, and this returns
+    that plan even after a newer one has been captured for the same operation.
+    """
+    plan = await session.get(Plan, plan_id)
+    if plan is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    fingerprint, source = await _operation_or_404(session, plan.fingerprint_id)
+    return plans.to_out(fingerprint, source, plan)

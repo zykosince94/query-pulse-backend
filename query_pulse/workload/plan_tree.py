@@ -105,3 +105,12 @@ def walk(node: PlanNode) -> Iterator[PlanNode]:
     yield node
     for child in node.children:
         yield from walk(child)
+
+
+def walk_with_ancestors(
+    node: PlanNode, ancestors: tuple[PlanNode, ...] = ()
+) -> Iterator[tuple[PlanNode, tuple[PlanNode, ...]]]:
+    """Every node with its ancestors (root first), for rules that look up the tree."""
+    yield node, ancestors
+    for child in node.children:
+        yield from walk_with_ancestors(child, (*ancestors, node))

@@ -54,13 +54,21 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
   within a cycle. Plans are stored as immutable evidence: a new row only when the plan changes.
   When a statement can't be planned (missing `SELECT` grant, cut-off text, utility statement),
   the reason is stored and shown instead of an empty viewer.
+- **Rule-based findings**: after collection, a declarative rule engine checks each source's
+  evidence and records findings, each with a confidence, the kind of evidence (a captured plan,
+  or a statistics heuristic), the facts behind it, a suggested fix as SQL to review (never run),
+  and links to the exact observations, plan and table samples it cites. Four rules cover the
+  demo's planted problems: PG-SEQSCAN-HOT (P1), PG-SORT-NO-INDEX (P2), PG-LEADING-WILDCARD (P3)
+  and PG-UNUSED-INDEX (P4). There is one finding per rule and target: a dismissed finding stays
+  dismissed, a resolved one reopens only on newer evidence, and open ones resolve on their own
+  once the problem is gone.
 - **Hardening**: an Origin check on every state-changing request (cross-site writes get 403), a
   login rate limit (10 failures per client per 5 minutes, then 429), and JSON logs where every
   line carries the request ID, which is also returned in the `X-Request-ID` header.
 - **Demo data**: a seeded e-commerce database with four planted problems (P1–P4) and a workload
   that runs them next to healthy controls, so `make demo` has real traffic to measure.
 
-Not yet: findings (Phase 5), MongoDB collection (Phase 6), the AI assistant (Phase 7).
+Not yet: MongoDB collection (Phase 6), the AI assistant (Phase 7).
 
 ## Quick start
 
@@ -83,6 +91,8 @@ Add the demo database as a source in the UI (host `demo-postgres`, port 5432, da
 user `querypulse_monitor`, password `monitor`) and the home page shows its activity within a
 minute. After a couple of minutes the planted problem P1 (`orders` looked up by `customer_id`,
 which has no index) is at the top of the explorer, and its plan shows the sequential scan.
+Within about three minutes the Findings page shows one finding for each planted problem, P1–P4,
+and none for the healthy controls.
 [docs/demo-checklist.md](docs/demo-checklist.md) walks through the whole demo.
 
 ## Development
@@ -142,6 +152,7 @@ query_pulse/
   sources/        data sources: models, schemas, service, API
   collector/      delta engine, collection cycle, supervisor, `python -m query_pulse.collector`
   workload/       fingerprints, observations, table stats, plans; explorer, plan and trend APIs
+  findings/       rules (rules.py), rule engine and lifecycle (engine.py), findings API
   demo/           demo seed and workload (not part of the product)
   adapters/       PostgreSQL and MongoDB adapters (connect, version, capabilities)
   crypto.py       Fernet encryption for stored credentials
@@ -151,7 +162,7 @@ scripts/          export_openapi.py
 tests/
 ```
 
-Planned packages (`findings/`, `ai/`) are added in the phase that needs them.
+The planned `ai/` package is added in Phase 7.
 
 ## Conventions
 

@@ -53,6 +53,15 @@ class Settings(BaseSettings):
     # so it gets at most a third of it.
     collector_plan_seconds: float = Field(default=300.0, gt=0)
     collector_plan_top_n: int = Field(default=20, ge=1, le=200)
+
+    # Findings: how often each source's rules run (after a collection cycle), and over what.
+    rules_interval_seconds: float = Field(default=60.0, gt=0)
+    rules_window_minutes: int = Field(default=60, ge=5, le=1440)
+    # An index counts as unused only if every sample over this span shows zero scans.
+    rules_unused_index_min_span_seconds: float = Field(default=3600.0, gt=0)
+    rules_unused_index_window_hours: int = Field(default=24, ge=1, le=24 * 31)
+    # An open finding whose problem hasn't been seen for this long is resolved automatically.
+    finding_resolve_after_seconds: float = Field(default=3600.0, gt=0)
     retention_days: int = Field(default=14, ge=1)
 
     # Logging: one JSON object per line (or readable text while developing).

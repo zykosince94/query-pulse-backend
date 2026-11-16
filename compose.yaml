@@ -94,6 +94,12 @@ services:
       QP_DEMO_PASSWORD: ${QP_DEMO_PASSWORD:-demo-password}
       # A short interval keeps the local demo lively; the production default is 60 s.
       QP_COLLECTOR_INTERVAL_SECONDS: ${QP_COLLECTOR_INTERVAL_SECONDS:-15}
+      # Findings in minutes instead of hours, so the demo shows P1-P4 soon after starting:
+      # rules every cycle, index samples every minute, "unused" after 2 minutes of zero
+      # scans (production: 60 s, 5 min and 1 hour).
+      QP_RULES_INTERVAL_SECONDS: ${QP_RULES_INTERVAL_SECONDS:-15}
+      QP_COLLECTOR_RELATION_STATS_SECONDS: ${QP_COLLECTOR_RELATION_STATS_SECONDS:-60}
+      QP_RULES_UNUSED_INDEX_MIN_SPAN_SECONDS: ${QP_RULES_UNUSED_INDEX_MIN_SPAN_SECONDS:-120}
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
