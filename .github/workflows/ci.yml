@@ -27,7 +27,7 @@ jobs:
       - run: uv run pytest
 
   stack:
-    name: make demo starts healthy (QP-AC-01, partial)
+    name: Full stack, smoke and acceptance (QP-AC-01, QP-AC-14, QP-AC-15)
     runs-on: ubuntu-latest
     needs: checks
     steps:
@@ -55,6 +55,14 @@ jobs:
             -H 'content-type: application/json' \
             -d '{"username":"admin","password":"admin-demo-password"}' >/dev/null
           curl -fsS -b jar http://localhost:8000/api/collector/status | grep -q '"status":"running"'
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Acceptance under the demo workload (QP-AC-14, QP-AC-15)
+        env:
+          QP_ACCEPTANCE_URL: http://127.0.0.1:8000
+        run: uv run pytest tests/acceptance -v
       - name: MongoDB replica set has a primary
         run: |
           docker compose exec -T mongo mongosh --quiet \

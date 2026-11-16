@@ -8,6 +8,7 @@ collector will later use to exclude its own statements.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -103,10 +104,10 @@ def _classify(exc: Exception, params: ConnectionParams) -> AdapterError:
 
 
 async def _execute(
-    conn: psycopg.AsyncConnection[tuple[Any, ...]], query: str
+    conn: psycopg.AsyncConnection[tuple[Any, ...]], query: str, prepare: bool | None = None
 ) -> psycopg.AsyncCursor[tuple[Any, ...]]:
     """Run one of our fixed monitoring queries, marked so it can be excluded from results."""
-    return await conn.execute(f"{QUERY_MARKER} {query}")  # fixed SQL
+    return await conn.execute(f"{QUERY_MARKER} {query}", prepare=prepare)  # fixed SQL
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,9 @@ class RelationRow:
     size_bytes: int
 
 
+# Statement text longer than this is cut off, and a cut-off statement can't be planned.
+MAX_QUERY_TEXT = 10000
+
 STATEMENTS_SQL = """
 SELECT s.dbid, s.userid, s.queryid, s.toplevel, s.calls, s.total_exec_time, s.rows,
        s.shared_blks_hit, s.shared_blks_read, left(s.query, 10000)
@@ -166,6 +170,76 @@ SELECT 'index', schemaname, relname, indexrelname, NULL, idx_scan, NULL, NULL,
        pg_relation_size(indexrelid)
 FROM pg_stat_user_indexes
 """
+
+
+# Statements EXPLAIN can plan. Leading comments (like our own marker) are allowed.
+_PLANNABLE = re.compile(
+    r"^\s*(?:/\*.*?\*/\s*|--[^\n]*\n\s*)*"
+    r"(select|with|insert|update|delete|merge|values|table)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+class PlanUnavailableError(Exception):
+    """This statement can't be planned. The message says why, for the person reading it."""
+
+
+def plannable_text(query: str) -> str:
+    """The statement text to put after EXPLAIN, or PlanUnavailableError saying why not.
+
+    The text comes from pg_stat_statements, so any user of the monitored database can
+    influence it. EXPLAIN without ANALYZE never executes the statement, and the session is
+    read-only, but a second statement smuggled in after a `;` would run for real (with this
+    role's rights). So any `;` other than a trailing one is refused outright: normalised
+    statements keep their literals as $n placeholders, so a legitimate statement almost never
+    contains one, and refusing a rare real one costs only a missing plan.
+    """
+    if len(query) >= MAX_QUERY_TEXT:
+        return _unplannable(
+            f"The statement text is longer than {MAX_QUERY_TEXT:,} characters and was cut off "
+            "when collected, so it can't be planned."
+        )
+    text = query.strip()
+    while text.endswith(";"):
+        text = text[:-1].rstrip()
+    if ";" in text:
+        return _unplannable(
+            "The statement text contains a semicolon, so Query Pulse won't send it to EXPLAIN "
+            "(it could be more than one statement)."
+        )
+    if not _PLANNABLE.match(text):
+        return _unplannable(
+            "Only SELECT, INSERT, UPDATE, DELETE, MERGE, VALUES, TABLE and WITH statements "
+            "have query plans."
+        )
+    return text
+
+
+def _unplannable(message: str) -> str:
+    raise PlanUnavailableError(message)
+
+
+def _plan_error(exc: psycopg.Error, username: str) -> str:
+    """A planning failure in words, with the fix where there is one."""
+    first = _first_line(exc)
+    if isinstance(exc, psycopg.errors.InsufficientPrivilege):
+        return (
+            f"The monitoring user can't read a table in this statement ({first}). Planning "
+            f"needs SELECT: GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO {username};"
+        )
+    if isinstance(exc, psycopg.errors.QueryCanceled):
+        return "Planning took longer than the 5 s statement timeout."
+    if isinstance(exc, psycopg.errors.UndefinedTable | psycopg.errors.UndefinedFunction):
+        return (
+            f"PostgreSQL couldn't resolve this statement as the monitoring user ({first}). "
+            "The table may have been dropped, or it's in a schema that isn't on this user's "
+            "search_path."
+        )
+    if isinstance(exc, psycopg.errors.IndeterminateDatatype | psycopg.errors.AmbiguousFunction):
+        return (
+            f"PostgreSQL can't plan this statement without knowing its parameter types ({first})."
+        )
+    return f"EXPLAIN failed: {first}"
 
 
 def _first_line(exc: Exception) -> str:
@@ -269,6 +343,29 @@ class PostgresAdapter:
             )
             for r in rows
         ]
+
+    async def explain_generic(
+        self, conn: psycopg.AsyncConnection[tuple[Any, ...]], query: str, username: str
+    ) -> list[Any]:
+        """The generic plan of a normalised statement, as EXPLAIN's JSON.
+
+        EXPLAIN (GENERIC_PLAN) plans text with $1 placeholders as is (PostgreSQL 16+). Without
+        ANALYZE nothing executes, so the statement's own counters don't move (QP-AC-15).
+        Raises PlanUnavailableError with a readable reason when there's no plan to show.
+        """
+        text = plannable_text(query)
+        try:
+            # prepare=False keeps this on the simple query protocol. psycopg prepares a
+            # statement after it has run a few times on one connection, and a *prepared*
+            # EXPLAIN treats the $1 placeholders as its own parameters, then fails because
+            # none are bound. GENERIC_PLAN exists precisely to plan unbound $n text.
+            cur = await _execute(conn, f"EXPLAIN (GENERIC_PLAN, FORMAT JSON) {text}", prepare=False)
+            row = await cur.fetchone()
+        except psycopg.Error as exc:
+            raise PlanUnavailableError(_plan_error(exc, username)) from None
+        if row is None or not isinstance(row[0], list):
+            raise PlanUnavailableError("EXPLAIN returned no plan.")
+        return row[0]
 
     @staticmethod
     async def _version(conn: psycopg.AsyncConnection[tuple[Any, ...]]) -> tuple[int, str]:

@@ -272,6 +272,48 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HistoryPoint": {
+        "description": "One bucket of an operation's history. The mean is None when there were no calls.",
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "mean_exec_time_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Exec Time Ms"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "total_exec_time_ms": {
+            "title": "Total Exec Time Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "calls",
+          "total_exec_time_ms",
+          "mean_exec_time_ms",
+          "rows"
+        ],
+        "title": "HistoryPoint",
+        "type": "object"
+      },
       "LoginRequest": {
         "properties": {
           "password": {
@@ -292,6 +334,468 @@
           "password"
         ],
         "title": "LoginRequest",
+        "type": "object"
+      },
+      "OperationDetail": {
+        "properties": {
+          "bucket_seconds": {
+            "title": "Bucket Seconds",
+            "type": "integer"
+          },
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/HistoryPoint"
+            },
+            "title": "History",
+            "type": "array"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/OperationSummary"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourceOut"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "toplevel": {
+            "title": "Toplevel",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "operation",
+          "source",
+          "toplevel",
+          "start",
+          "end",
+          "bucket_seconds",
+          "history"
+        ],
+        "title": "OperationDetail",
+        "type": "object"
+      },
+      "OperationList": {
+        "properties": {
+          "end": {
+            "format": "date-time",
+            "title": "End",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/OperationSummary"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "sort": {
+            "enum": [
+              "total_time",
+              "mean_time",
+              "calls"
+            ],
+            "title": "Sort",
+            "type": "string"
+          },
+          "start": {
+            "format": "date-time",
+            "title": "Start",
+            "type": "string"
+          },
+          "total_count": {
+            "title": "Total Count",
+            "type": "integer"
+          },
+          "total_exec_time_ms": {
+            "title": "Total Exec Time Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "start",
+          "end",
+          "sort",
+          "total_count",
+          "total_exec_time_ms",
+          "operations"
+        ],
+        "title": "OperationList",
+        "type": "object"
+      },
+      "OperationPlan": {
+        "description": "The latest generic plan for an operation, or why there isn't one.\n\n- captured: `root` and `raw` hold the plan.\n- failed: EXPLAIN was tried and `reason` says why it gave no plan.\n- not_captured: plans are available but none was captured yet for this operation.\n- unavailable: this source can't produce plans; `reason` and `fix` say why and what to do.",
+        "properties": {
+          "captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fix"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "integer"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "root": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PlanNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "captured",
+              "failed",
+              "not_captured",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "status"
+        ],
+        "title": "OperationPlan",
+        "type": "object"
+      },
+      "OperationSummary": {
+        "description": "One row of the explorer: an operation (a fingerprint) and its metrics in the window.",
+        "properties": {
+          "calls": {
+            "title": "Calls",
+            "type": "integer"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/SourceEngine"
+          },
+          "first_seen_at": {
+            "format": "date-time",
+            "title": "First Seen At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "last_seen_at": {
+            "format": "date-time",
+            "title": "Last Seen At",
+            "type": "string"
+          },
+          "mean_exec_time_ms": {
+            "title": "Mean Exec Time Ms",
+            "type": "number"
+          },
+          "query": {
+            "title": "Query",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "share_of_total_time": {
+            "title": "Share Of Total Time",
+            "type": "number"
+          },
+          "shared_blks_hit": {
+            "title": "Shared Blks Hit",
+            "type": "integer"
+          },
+          "shared_blks_read": {
+            "title": "Shared Blks Read",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "integer"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "total_exec_time_ms": {
+            "title": "Total Exec Time Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "calls",
+          "total_exec_time_ms",
+          "mean_exec_time_ms",
+          "rows",
+          "shared_blks_hit",
+          "shared_blks_read",
+          "id",
+          "source_id",
+          "source_name",
+          "engine",
+          "query",
+          "share_of_total_time",
+          "first_seen_at",
+          "last_seen_at"
+        ],
+        "title": "OperationSummary",
+        "type": "object"
+      },
+      "PlanNode": {
+        "description": "One node of a PostgreSQL plan, with the planner's estimates (nothing was executed).",
+        "properties": {
+          "alias": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alias"
+          },
+          "children": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/PlanNode"
+            },
+            "title": "Children",
+            "type": "array"
+          },
+          "details": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Details",
+            "type": "object"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "index_cond": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Cond"
+          },
+          "index_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Name"
+          },
+          "join_cond": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Join Cond"
+          },
+          "join_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Join Type"
+          },
+          "node_type": {
+            "title": "Node Type",
+            "type": "string"
+          },
+          "parent_relationship": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Relationship"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "plan_rows": {
+            "title": "Plan Rows",
+            "type": "number"
+          },
+          "plan_width": {
+            "title": "Plan Width",
+            "type": "integer"
+          },
+          "recheck_cond": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recheck Cond"
+          },
+          "relation_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Relation Name"
+          },
+          "schema_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Name"
+          },
+          "sort_key": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Sort Key",
+            "type": "array"
+          },
+          "startup_cost": {
+            "title": "Startup Cost",
+            "type": "number"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy"
+          },
+          "total_cost": {
+            "title": "Total Cost",
+            "type": "number"
+          }
+        },
+        "required": [
+          "path",
+          "node_type",
+          "startup_cost",
+          "total_cost",
+          "plan_rows",
+          "plan_width"
+        ],
+        "title": "PlanNode",
         "type": "object"
       },
       "Role": {
@@ -917,7 +1421,7 @@
   "info": {
     "description": "Query Pulse backend.",
     "title": "Query Pulse API",
-    "version": "0.1.0"
+    "version": "0.4.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -998,6 +1502,9 @@
               }
             },
             "description": "Validation Error"
+          },
+          "429": {
+            "description": "Too many failed sign-ins from this client; retry later"
           }
         },
         "summary": "Login",
@@ -1058,6 +1565,349 @@
           }
         },
         "summary": "Collector Status",
+        "tags": [
+          "workload"
+        ]
+      }
+    },
+    "/api/operations": {
+      "get": {
+        "description": "Operations ranked by total time, mean time or calls over a time window.",
+        "operationId": "listOperations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "total_time",
+              "enum": [
+                "total_time",
+                "mean_time",
+                "calls"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "description": "Keep statements containing this text",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep statements containing this text",
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The last N minutes (default 60)",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 44640,
+                  "minimum": 5,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The last N minutes (default 60)",
+              "title": "Minutes"
+            }
+          },
+          {
+            "description": "Absolute window start (ISO 8601; UTC if no zone)",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute window start (ISO 8601; UTC if no zone)",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Absolute window end (default: now)",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute window end (default: now)",
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Operations",
+        "tags": [
+          "workload"
+        ]
+      }
+    },
+    "/api/operations/{operation_id}": {
+      "get": {
+        "description": "One operation: its statement, metrics over the window and history per minute or hour.",
+        "operationId": "getOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The last N minutes (default 60)",
+            "in": "query",
+            "name": "minutes",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 44640,
+                  "minimum": 5,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The last N minutes (default 60)",
+              "title": "Minutes"
+            }
+          },
+          {
+            "description": "Absolute window start (ISO 8601; UTC if no zone)",
+            "in": "query",
+            "name": "start",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute window start (ISO 8601; UTC if no zone)",
+              "title": "Start"
+            }
+          },
+          {
+            "description": "Absolute window end (default: now)",
+            "in": "query",
+            "name": "end",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Absolute window end (default: now)",
+              "title": "End"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDetail"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operation",
+        "tags": [
+          "workload"
+        ]
+      }
+    },
+    "/api/operations/{operation_id}/plan": {
+      "get": {
+        "description": "The latest generic plan for an operation, or why there isn't one.",
+        "operationId": "getOperationPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Operation Plan",
+        "tags": [
+          "workload"
+        ]
+      },
+      "post": {
+        "description": "Plan the statement again now with EXPLAIN (GENERIC_PLAN). Never executes it.",
+        "operationId": "captureOperationPlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "502": {
+            "description": "The source couldn't be reached to plan the statement"
+          }
+        },
+        "summary": "Capture Operation Plan",
         "tags": [
           "workload"
         ]

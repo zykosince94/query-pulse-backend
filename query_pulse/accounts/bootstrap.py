@@ -89,5 +89,8 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    from query_pulse.log import configure_logging
+
+    settings = get_settings()
+    configure_logging(settings.log_format, settings.log_level)
     asyncio.run(_main())

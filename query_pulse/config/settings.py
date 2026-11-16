@@ -48,7 +48,24 @@ class Settings(BaseSettings):
     collector_relation_stats_seconds: float = Field(default=300.0, gt=0)
     collector_capability_check_seconds: float = Field(default=900.0, gt=0)
     collector_refresh_seconds: float = Field(default=30.0, gt=0)  # pick up added/removed sources
+    # Generic plans: every this often, re-plan each source's busiest operations (operations
+    # without a plan yet are planned on the next cycle). Planning shares the cycle timeout,
+    # so it gets at most a third of it.
+    collector_plan_seconds: float = Field(default=300.0, gt=0)
+    collector_plan_top_n: int = Field(default=20, ge=1, le=200)
     retention_days: int = Field(default=14, ge=1)
+
+    # Logging: one JSON object per line (or readable text while developing).
+    log_format: Literal["json", "text"] = "json"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+
+    # Cross-site requests: state-changing requests whose Origin isn't this site are refused.
+    # Comma-separated extra origins to accept, e.g. "https://qp.example.com".
+    allowed_origins: str = ""
+
+    # Sign-in: after this many failures from one client within the window, refuse for a while.
+    login_max_failures: int = Field(default=10, ge=1)
+    login_window_seconds: float = Field(default=300.0, gt=0)
 
     # Users created by `python -m query_pulse.accounts.bootstrap`.
     admin_username: str = Field(default="admin", min_length=1)
@@ -56,6 +73,10 @@ class Settings(BaseSettings):
     demo_enabled: bool = False
     demo_username: str = Field(default="demo", min_length=1)
     demo_password: SecretStr | None = None
+
+    @property
+    def allowed_origin_set(self) -> set[str]:
+        return {o.strip() for o in self.allowed_origins.split(",") if o.strip()}
 
     @property
     def fernet_keys(self) -> list[str]:

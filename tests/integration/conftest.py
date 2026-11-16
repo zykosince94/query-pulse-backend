@@ -31,7 +31,13 @@ if not _docker_available():
 from testcontainers.community.mongodb import MongoDbContainer  # noqa: E402
 from testcontainers.community.postgres import PostgresContainer  # noqa: E402
 
-pytestmark = pytest.mark.integration
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark every test in this folder `integration` (a conftest's `pytestmark` isn't applied
+    to test modules, so `-m integration` used to select nothing)."""
+    for item in items:
+        if "tests/integration/" in item.nodeid.replace("\\", "/"):
+            item.add_marker(pytest.mark.integration)
 
 
 @dataclass(frozen=True)

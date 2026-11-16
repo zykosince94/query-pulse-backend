@@ -4,8 +4,8 @@ What Query Pulse does today, across the backend (`query-pulse-backend`) and the 
 (`query-pulse-frontend`). This page describes **current behaviour only**. Planned work is listed
 at the end and marked as such.
 
-*As of 16 November 2026: Phase 1 ("Foundation"), Phase 2 ("Data sources") and Phase 3 ("PostgreSQL
-collector", release target v0.3.0).*
+*As of 16 November 2026: Phases 1–4 ("Foundation", "Data sources", "PostgreSQL collector",
+"Workload explorer and plans"), release target v0.4.0.*
 
 ---
 
@@ -18,14 +18,16 @@ collector", release target v0.3.0).*
 | Access control | 401 without a session, 403 for the demo user on writes | — |
 | App shell | Navigation, current user, read-only badge, not-found and error pages | — |
 | Data sources | Add, edit, re-check and delete PostgreSQL and MongoDB sources; real connection test before saving; capability checklist with exact fixes; encrypted credentials | — |
-| Workload | Health strip on the home page: each source's status, last-hour calls and execution time, and a calls-per-minute sparkline | Ranked explorer and plans (Phase 4) |
-| Collector | Polls every enabled PostgreSQL source, stores per-interval deltas from `pg_stat_statements`, handles resets, evictions and restarts, samples table/index statistics, re-checks capabilities, deletes old data | MongoDB collection (Phase 6) |
+| Workload | Health strip; the explorer ranking operations by total time, mean or calls over a time range, with filters kept in the URL; operation detail with metric history; the PostgreSQL plan viewer | — |
+| Plans | Generic plans (`EXPLAIN (GENERIC_PLAN)`, never executed) captured in the background for each source's busiest operations, stored as evidence; re-capture on demand (admin) | MongoDB plans (Phase 6) |
+| Collector | Polls every enabled PostgreSQL source, stores per-interval deltas from `pg_stat_statements`, handles resets, evictions and restarts, samples table/index statistics, plans busy operations, re-checks capabilities, deletes old data | MongoDB collection (Phase 6) |
 | Findings, Settings | — | Placeholder pages |
-| Ops | `/health`, `/ready`, OpenAPI docs | — |
+| Ops | `/health`, `/ready`, OpenAPI docs, JSON logs with request IDs | — |
 | Local stack | App database, demo PostgreSQL 16 with `pg_stat_statements` and a seeded e-commerce database with planted problems P1–P4, MongoDB 7 replica set, the collector, and a demo workload | — |
 
-Query Pulse never writes to the databases it monitors. It connects only to test a connection and
-check capabilities, with read-only sessions, and it never changes a setting (for example, it
+Query Pulse never writes to the databases it monitors. It connects only to test a connection,
+check capabilities, collect statistics and plan statements, always with read-only sessions, and
+it never changes a setting (for example, it
 reports that MongoDB profiling is off but never turns it on).
 
 ---
@@ -61,7 +63,8 @@ works without CORS.
 | Path | Access | Shows |
 |---|---|---|
 | `/login` | Public | Sign-in form; "Try the demo" when enabled |
-| `/` | Signed in | Workload: the source health strip, plus the explorer placeholder (Phase 4) |
+| `/` | Signed in | Workload: the source health strip and the explorer. Search params: `range`, `from`, `to`, `sort`, `source`, `q` |
+| `/operations/:id` | Signed in | One operation: statement, metrics, history and plan. Search params: `range`, `from`, `to` |
 | `/sources` | Signed in | Data sources list |
 | `/sources/new` | Signed in (admin) | Add a source; the demo user sees a read-only notice |
 | `/sources/:id` | Signed in | Source detail and capability checklist |
@@ -170,6 +173,43 @@ works without CORS.
 - Data refreshes every 30 seconds. The current, unfinished minute is left out of every trend, so
   charts don't show a false drop at the right edge.
 
+**Home (`/`): workload explorer**
+- A table of operations ranked by **total time** (default), **mean time** or **calls** over the
+  chosen time range: rank, the statement (links to its detail page), its source, total time, its
+  **share** of the source's total time (with a bar), calls, mean time and rows.
+- Filters: **time range** (last 15 minutes, hour (default), 6 hours, 24 hours, 7 days),
+  **rank by**, **source**, and **statement contains** (applied on Enter or "Filter"; matches
+  text literally and ignoring case).
+- Every filter and the time range live in the URL, so a copied link reopens the same view
+  (QP-AC-16). Defaults are left out to keep links short; invalid values fall back to defaults.
+- **Lock range** turns a relative range ("last hour") into fixed start and end times, so a
+  shared link shows the same data later. A locked range shows as its dates in the time-range
+  list. **Copy link** copies the page's URL.
+- Shows the top 50, with "Top 50 of N operations", the window's total execution time and the
+  range below the table. Relative ranges refresh every 30 seconds; locked ones don't change.
+- Empty states say whether nothing was collected in the range or nothing matches the filters.
+- On narrow screens the table scrolls sideways inside its card.
+
+**Operation detail (`/operations/:id`)**
+- The full statement text (as `pg_stat_statements` normalised it, with `$1` placeholders), its
+  source, and when it was first and last seen. Statements that run inside a function say so.
+- A time-range selector (the explorer's range is carried over, including a locked one).
+- Metrics over the range: **total time** (with its share of the source's total), **calls**,
+  **mean time**, **rows** (and rows per call), and **cache hit ratio** (shared buffer hits ÷
+  hits + reads, with the number of blocks read from disk).
+- Two charts: **execution time** and **calls**, per minute for ranges up to 6 hours and per hour
+  beyond that, each with a **Show data** table. The unfinished current minute is left out.
+- **Query plan** (the PostgreSQL plan viewer): the generic plan's node tree, each node with its
+  type, table (and alias), index, estimated **cost** (startup..total), **rows** and width, its
+  share of the whole plan's cost, and its filter, index condition, join condition or sort key.
+  Sequential scans are highlighted with "Reads the whole table". The raw EXPLAIN JSON is
+  available under "Raw plan". Below the tree: when the plan was captured and last re-checked.
+- When there's no plan, the viewer says why: not captured yet ("Capture plan now" for the
+  admin), planning failed (with PostgreSQL's reason, e.g. the missing `SELECT` grant, and "Try
+  again"), or the source can't produce plans (with the fix, e.g. "Upgrade to PostgreSQL 16 or
+  later"). The admin can **Re-capture** a plan; the demo user sees no capture buttons.
+- An unknown operation id says the operation doesn't exist; a non-numeric one is "Page not found".
+
 **Source detail: Collection panel**
 - "Last collected …" (or "Waiting for the first collection": the collector takes a baseline
   first and records activity from the next cycle).
@@ -213,7 +253,7 @@ database (readiness) and is what Docker's healthcheck uses.
 | Method and path | Access | Request | Success | Errors |
 |---|---|---|---|---|
 | `GET /api/auth/config` | Public | — | `200 {"demo_enabled": true}` | — |
-| `POST /api/auth/login` | Public | `{"username": "…", "password": "…"}` | `200` user, sets cookie | `401` invalid credentials, `422` empty or too-long fields |
+| `POST /api/auth/login` | Public | `{"username": "…", "password": "…"}` | `200` user, sets cookie | `401` invalid credentials, `422` empty or too-long fields, `429` too many failed sign-ins (§5) |
 | `POST /api/auth/demo` | Public | — | `200` demo user, sets cookie | `404 {"detail": "The demo is not enabled"}` |
 | `POST /api/auth/logout` | Public | — | `204`, clears the session | — |
 | `GET /api/auth/me` | Session | — | `200` user | `401 {"detail": "Not signed in"}` |
@@ -225,6 +265,9 @@ The user object returned by login, demo and me:
 ```
 
 Field limits: `username` 1–64 characters, `password` 1–256 characters.
+
+Every state-changing request, these included, is refused with `403` when its `Origin` names
+another site (§5).
 
 Logout is public on purpose: the demo user must be able to sign out, and signing out without a
 session is harmless.
@@ -332,6 +375,51 @@ reachable networks.
 - The collector status is `running` when its heartbeat is less than three refresh periods old
   (90 seconds by default).
 
+### 4.5 Workload explorer and plans
+
+| Method and path | Access | Success | Errors |
+|---|---|---|---|
+| `GET /api/operations` | Session | `200 {"start", "end", "sort", "total_count", "total_exec_time_ms", "operations": [...]}` | `401`, `422` |
+| `GET /api/operations/{operation_id}` | Session | `200 {"operation", "source", "toplevel", "start", "end", "bucket_seconds", "history": [...]}` | `401`, `404`, `422` |
+| `GET /api/operations/{operation_id}/plan` | Session | `200` the latest plan, or why there isn't one (below) | `401`, `404` |
+| `POST /api/operations/{operation_id}/plan` | Admin | `200` plans the statement now and returns it | `401`, `403`, `404`, `502` (the source can't be reached) |
+
+**Time window** (list and detail): either `minutes` (5 to 44,640; default 60: the last N
+minutes) or `start` with an optional `end` (ISO 8601; UTC when no zone is given; `end` defaults
+to now). Giving both forms, an `end` without `start`, a window shorter than a minute or longer
+than 31 days returns 422. An observation belongs to the window when its interval ended inside it.
+
+**List parameters:** `sort` = `total_time` (default) | `mean_time` | `calls`; `source_id`; `q`
+(up to 200 characters, matched literally and ignoring case, so `%` and `_` aren't wildcards);
+`limit` 1–200 (default 50). Ties are ordered by operation id, so the order is stable.
+
+**An operation** (`OperationSummary`): `id` (the fingerprint), `source_id`, `source_name`,
+`engine`, `query`, the window's `calls`, `total_exec_time_ms`, `mean_exec_time_ms` (total ÷
+calls over the window, not an average of per-interval means), `rows`, `shared_blks_hit`,
+`shared_blks_read`, `share_of_total_time` (0–1, of its own source's total in the window),
+`first_seen_at`, `last_seen_at`. `total_count` is how many operations matched before `limit`;
+`total_exec_time_ms` is the window's total across the filtered sources (ignoring `q`).
+
+**History:** one point per minute for windows up to 6 hours (`bucket_seconds` 60) and per hour
+beyond (`3600`), bucketed with `date_trunc(..., 'UTC')` in SQL. Every bucket has a point (zeros
+included; `mean_exec_time_ms` is null when there were no calls). Minute histories stop at the
+last complete minute; hour histories include the current hour.
+
+**Plan responses** (`OperationPlan`) have a `status`:
+
+| `status` | Meaning | Fields |
+|---|---|---|
+| `captured` | The latest generic plan | `plan_id`, `captured_at`, `checked_at`, `root` (the node tree), `raw` (EXPLAIN's JSON) |
+| `failed` | EXPLAIN was tried and gave no plan | `plan_id`, `captured_at`, `checked_at`, `reason` |
+| `not_captured` | Plans work here but none was captured yet | `reason` |
+| `unavailable` | The source can't produce plans (older than PostgreSQL 16, or MongoDB) | `reason`, `fix` |
+
+A plan node has `path` (its position, e.g. `0.1.0`, stable for a given plan), `node_type`,
+`relation_name`, `schema_name`, `alias`, `index_name`, `startup_cost`, `total_cost`,
+`plan_rows`, `plan_width`, `filter`, `index_cond`, `recheck_cond`, `join_cond`, `sort_key`,
+`join_type`, `strategy`, `parent_relationship`, `details` (every other value PostgreSQL
+reported, as text) and `children`.
+
 ---
 
 ## 5. Sessions and security behaviour
@@ -348,6 +436,10 @@ reachable networks.
 | Credentials in responses | Never returned. Source responses only say `has_password`. A test checks that a marker password never appears in any response body or log line (QP-AC-08). |
 | Credentials at rest | Encrypted with Fernet (AES-128-CBC + HMAC-SHA256) using `QP_FERNET_KEY`, decrypted only in the service layer right before an adapter connects. Several comma-separated keys allow rotation: the first encrypts, all decrypt. |
 | Monitored databases | Connections are read-only and time out (§4.3). Log lines carry the source name and error code, never credentials. |
+| Cross-site requests | Besides `SameSite=Lax`, every state-changing request (POST, PUT, PATCH, DELETE) with an `Origin` header that isn't this site gets **403** before any route runs. Same site means the Origin's host and port match the request's `Host` (true behind Vite's proxy and Caddy). `QP_ALLOWED_ORIGINS` adds others. Requests without an Origin (curl, scripts) aren't browser cross-site requests and pass. |
+| Sign-in rate limit | After `QP_LOGIN_MAX_FAILURES` (10) failed sign-ins from one client address within `QP_LOGIN_WINDOW_SECONDS` (300), sign-in returns **429** with `Retry-After` until the oldest failure ages out. The password isn't checked while locked out. Successful sign-ins never count. In memory (one API instance). Behind a proxy, every client shares the proxy's address unless uvicorn trusts its `X-Forwarded-For`. |
+| Logs | One JSON object per line (`QP_LOG_FORMAT=text` for development): `time`, `level`, `logger`, `message`, `request_id` and any structured fields. Each request gets an ID (the caller's `X-Request-ID` if it's 1–64 safe characters, otherwise a new one), returned in the `X-Request-ID` response header and on every log line written while handling it. One access line per request: method, path (never the query string), status, duration. Health checks aren't logged. |
+| Planning collected statements | Statement text comes from `pg_stat_statements`, which any user of the monitored database can influence. EXPLAIN without ANALYZE never executes it and the session is read-only, but a second statement after a `;` would run, so text containing a `;` (other than a trailing one) is never sent. Only SELECT, INSERT, UPDATE, DELETE, MERGE, VALUES, TABLE and WITH are planned, and cut-off text (10,000+ characters) isn't. |
 | Secrets in memory | Held as `SecretStr`, shown as `**********` in logs and error output |
 | Revoking sessions | Not possible per session. Changing `QP_SESSION_SECRET` signs everyone out. |
 
@@ -381,11 +473,21 @@ reachable networks.
 | Collector restart | Continues from the stored baseline |
 | A source's database, host, port, engine or username changes, or it's re-enabled | The baseline is cleared, so the next cycle starts fresh instead of counting a lifetime as one interval |
 
+**Plans:** after storing a cycle's observations, the collector plans the source's busiest
+operations of the last hour by total time (`QP_COLLECTOR_PLAN_TOP_N`, 20) with
+`EXPLAIN (GENERIC_PLAN, FORMAT JSON)`: all of them every `QP_COLLECTOR_PLAN_SECONDS` (300), and in
+between only those without a plan yet, so a new hot statement gets its plan within one cycle.
+Only for sources whose "Query plans" capability is available (PostgreSQL 16+). A plan identical
+to the latest one just has its "last checked" time moved; a changed plan is a new row (plans
+are evidence that Phase 5's findings will cite). Statements that can't be planned get a row with
+the reason. Planning gets at most a third of the cycle time limit; what doesn't fit waits for
+the next cycle, and a planning failure never fails collection.
+
 **Other jobs:** table and index statistics (`pg_stat_user_tables`, `pg_stat_user_indexes`:
 scans, live/dead rows, sizes) every `QP_COLLECTOR_RELATION_STATS_SECONDS` (300); capability
 re-checks every `QP_COLLECTOR_CAPABILITY_CHECK_SECONDS` (900), so enabling an extension later
-turns its feature on; and once a day it deletes observations and table samples older than
-`QP_RETENTION_DAYS` (14).
+turns its feature on; and once a day it deletes observations, table samples and plans (not
+re-checked within the period) older than `QP_RETENTION_DAYS` (14).
 
 **Failures:** each cycle has a time limit (`QP_COLLECTOR_CYCLE_TIMEOUT_SECONDS`, 30). A failed
 cycle marks the source **failing** with the error, and the next attempt waits longer each time
@@ -438,7 +540,14 @@ error.
 | `QP_COLLECTOR_RELATION_STATS_SECONDS` | no | `300` | How often table and index statistics are sampled |
 | `QP_COLLECTOR_CAPABILITY_CHECK_SECONDS` | no | `900` | How often capabilities are re-checked |
 | `QP_COLLECTOR_REFRESH_SECONDS` | no | `30` | How often the collector picks up added or removed sources (and writes its heartbeat) |
-| `QP_RETENTION_DAYS` | no | `14` | Observations and table samples older than this are deleted daily |
+| `QP_COLLECTOR_PLAN_SECONDS` | no | `300` | How often each source's busiest operations are all re-planned |
+| `QP_COLLECTOR_PLAN_TOP_N` | no | `20` | How many of each source's busiest operations are planned (1–200) |
+| `QP_RETENTION_DAYS` | no | `14` | Observations, table samples and stale plans older than this are deleted daily |
+| `QP_LOG_FORMAT` | no | `json` | `json` (one object per line) or `text` |
+| `QP_LOG_LEVEL` | no | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
+| `QP_ALLOWED_ORIGINS` | no | — | Comma-separated extra origins allowed to make state-changing requests |
+| `QP_LOGIN_MAX_FAILURES` | no | `10` | Failed sign-ins per client before sign-in is refused for a while |
+| `QP_LOGIN_WINDOW_SECONDS` | no | `300` | The window those failures are counted in |
 | `QP_ADMIN_USERNAME` | no | `admin` | Admin username |
 | `QP_ADMIN_PASSWORD` | **yes** | — | Admin password; at least 8 characters |
 | `QP_DEMO_ENABLED` | no | `false` | Creates the demo user and enables "Try the demo" |
@@ -484,6 +593,9 @@ after all three databases report healthy. Data persists in named Docker volumes;
 | `QP_OPENAPI_SOURCE` | `../query-pulse-backend/openapi.json` | Spec used by `npm run gen:api` (a path or URL) |
 | `E2E_ADMIN_USERNAME`, `E2E_ADMIN_PASSWORD` | `admin`, `admin-demo-password` | Credentials for the Playwright tests |
 
+Backend acceptance tests (`tests/acceptance/`): `QP_ACCEPTANCE_URL` (unset: skipped),
+`QP_ACCEPTANCE_ADMIN_PASSWORD` (`admin-demo-password`), `QP_ACCEPTANCE_WAIT_SECONDS` (240).
+
 ---
 
 ## 8. The API contract between the repos
@@ -519,8 +631,16 @@ Push backend API changes first, then regenerate and push the frontend.
 | QP-AC-12: rising `dealloc` produces an eviction warning on the source | Done | Unit tests + `test_rising_dealloc_warns_on_the_source` (`pg_stat_statements.max=100`) |
 | QP-AC-13: a database going down marks the source failing; it recovers on its own | Done | `test_outage_marks_failing_then_recovers` (pauses the container); backoff and supervisor unit tests |
 
-Test counts: 140 backend unit and 23 backend integration (pytest), 52 frontend (Vitest), 6
-end-to-end (Playwright).
+| QP-AC-14: under the demo workload, P1 ranks first by total time over the last 15 minutes | Done | Backend `tests/acceptance/test_demo_workload.py::test_p1_ranks_first_by_total_time` (full stack, CI `stack` job); ranking unit tests in `test_explorer.py` |
+| QP-AC-15: P1's generic plan contains a Seq Scan on `orders`; planning never executes the query | Done | `tests/integration/test_plans.py::test_p1_plan_shows_the_seq_scan_without_executing_it` (call count unchanged after 10 direct EXPLAINs and two more planning cycles); the same check end to end in the acceptance test |
+| QP-AC-16: a copied explorer URL reopens the same filters and time range | Done | Playwright `explorer.spec.ts` (opened in a second browser context); Vitest `explorer.test.tsx` |
+| QP-AC-17: journey home → P1 → plan viewer shows the sequential scan | Done | Playwright `explorer.spec.ts` |
+
+Phase 1 close-out (Origin check, login rate limit, JSON logs with request IDs) is covered by
+`test_hardening.py`.
+
+Test counts: 198 backend unit, 25 backend integration and 2 backend acceptance (pytest), 71
+frontend (Vitest), 8 end-to-end (Playwright).
 
 ---
 
@@ -528,8 +648,6 @@ end-to-end (Playwright).
 
 | Planned | Phase | Release |
 |---|---|---|
-| CSRF protection beyond SameSite, login rate limit, JSON logs with request IDs | 1 | v0.1.0 |
-| Workload explorer and query plans | 4 | v0.4.0 |
 | Rule-based findings for P1–P4 (first showable release) | 5 | v0.5.0 |
 | MongoDB collection and findings | 6 | v0.6.0 |
 | Optional AI explanations and drafts, hardening | 7 | v1.0.0 |

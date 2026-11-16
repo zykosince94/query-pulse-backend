@@ -6,14 +6,27 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 
-from query_pulse.accounts.dependencies import SessionDep, current_user
+from query_pulse.accounts.dependencies import SessionDep, Writer, current_user
+from query_pulse.adapters import AdapterError
+from query_pulse.adapters.postgres import PostgresAdapter
 from query_pulse.collector.models import CollectorHeartbeat
 from query_pulse.config import Settings
+from query_pulse.crypto import CredentialCipher
+from query_pulse.db import utcnow
 from query_pulse.sources import service as sources
 from query_pulse.sources.models import DataSource
 from query_pulse.sources.schemas import CollectorStatus
-from query_pulse.workload import service
-from query_pulse.workload.schemas import SourceHealth, SourceTrend
+from query_pulse.workload import explorer, plans, service
+from query_pulse.workload.explorer import MAX_WINDOW, Window
+from query_pulse.workload.models import Fingerprint
+from query_pulse.workload.schemas import (
+    OperationDetail,
+    OperationList,
+    OperationPlan,
+    SortKey,
+    SourceHealth,
+    SourceTrend,
+)
 
 router = APIRouter(prefix="/api", tags=["workload"], dependencies=[Depends(current_user)])
 
@@ -69,3 +82,125 @@ async def collector_status(request: Request, session: SessionDep) -> CollectorSt
         source_count=count,
         message="Collecting." if alive else "No heartbeat recently: the collector isn't running.",
     )
+
+
+# --- workload explorer (Phase 4) -------------------------------------------------------------
+
+MAX_MINUTES = int(MAX_WINDOW.total_seconds() // 60)
+
+
+def time_window(
+    minutes: Annotated[
+        int | None,
+        Query(ge=5, le=MAX_MINUTES, description="The last N minutes (default 60)"),
+    ] = None,
+    start: Annotated[
+        datetime | None, Query(description="Absolute window start (ISO 8601; UTC if no zone)")
+    ] = None,
+    end: Annotated[datetime | None, Query(description="Absolute window end (default: now)")] = None,
+) -> Window:
+    """Either a relative window (`minutes`) or an absolute one (`start`, optional `end`)."""
+    if minutes is not None and (start is not None or end is not None):
+        raise HTTPException(422, detail="Give either minutes or start/end, not both")
+    if start is None:
+        if end is not None:
+            raise HTTPException(422, detail="end needs a start")
+        return Window.last(minutes or 60)
+    window = Window(service.as_utc(start), service.as_utc(end) if end else datetime.now(UTC))
+    if window.end - window.start < timedelta(minutes=1):
+        raise HTTPException(422, detail="The window must be at least one minute long")
+    if window.end - window.start > MAX_WINDOW:
+        raise HTTPException(422, detail=f"The window can't be longer than {MAX_WINDOW.days} days")
+    return window
+
+
+WindowDep = Annotated[Window, Depends(time_window)]
+
+
+async def _operation_or_404(
+    session: SessionDep, operation_id: int
+) -> tuple[Fingerprint, DataSource]:
+    fingerprint = await session.get(Fingerprint, operation_id)
+    source = await session.get(DataSource, fingerprint.source_id) if fingerprint else None
+    if fingerprint is None or source is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Operation not found")
+    return fingerprint, source
+
+
+@router.get("/operations", response_model=OperationList, operation_id="listOperations")
+async def list_operations(
+    session: SessionDep,
+    window: WindowDep,
+    sort: SortKey = "total_time",
+    source_id: Annotated[int | None, Query(ge=1)] = None,
+    q: Annotated[
+        str | None, Query(max_length=200, description="Keep statements containing this text")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> OperationList:
+    """Operations ranked by total time, mean time or calls over a time window."""
+    return await explorer.rank_operations(
+        session, window, sort=sort, source_id=source_id, text=(q or "").strip() or None, limit=limit
+    )
+
+
+@router.get(
+    "/operations/{operation_id}", response_model=OperationDetail, operation_id="getOperation"
+)
+async def get_operation(
+    operation_id: int, session: SessionDep, window: WindowDep
+) -> OperationDetail:
+    """One operation: its statement, metrics over the window and history per minute or hour."""
+    fingerprint, source = await _operation_or_404(session, operation_id)
+    return OperationDetail(
+        operation=await explorer.operation_summary(session, fingerprint, source, window),
+        source=sources.to_out(source),
+        toplevel=fingerprint.toplevel,
+        start=window.start,
+        end=window.end,
+        bucket_seconds=int(window.step.total_seconds()),
+        history=await explorer.operation_history(session, fingerprint.id, window),
+    )
+
+
+@router.get(
+    "/operations/{operation_id}/plan",
+    response_model=OperationPlan,
+    operation_id="getOperationPlan",
+)
+async def get_operation_plan(operation_id: int, session: SessionDep) -> OperationPlan:
+    """The latest generic plan for an operation, or why there isn't one."""
+    fingerprint, source = await _operation_or_404(session, operation_id)
+    return plans.to_out(fingerprint, source, await plans.latest_plan(session, fingerprint.id))
+
+
+@router.post(
+    "/operations/{operation_id}/plan",
+    response_model=OperationPlan,
+    operation_id="captureOperationPlan",
+    responses={502: {"description": "The source couldn't be reached to plan the statement"}},
+)
+async def capture_operation_plan(
+    operation_id: int, request: Request, session: SessionDep, _: Writer
+) -> OperationPlan:
+    """Plan the statement again now with EXPLAIN (GENERIC_PLAN). Never executes it."""
+    fingerprint, source = await _operation_or_404(session, operation_id)
+    if not plans.plans_available(source):
+        return plans.to_out(fingerprint, source, await plans.latest_plan(session, fingerprint.id))
+    settings: Settings = request.app.state.settings
+    cipher: CredentialCipher = request.app.state.cipher
+    adapter: PostgresAdapter = request.app.state.postgres_adapter
+    try:
+        params = sources.params_for(
+            sources.connection_fields(source),
+            sources.stored_password(source, cipher),
+            settings.source_connect_timeout_seconds,
+        )
+        conn = await adapter.connect(params)
+    except AdapterError as error:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=error.message) from None
+    async with conn:
+        plan, reason = await plans.explain(adapter, conn, fingerprint, source.username)
+    row = await plans.record_plan(session, fingerprint, plan, reason, utcnow())
+    await session.commit()
+    return plans.to_out(fingerprint, source, row)

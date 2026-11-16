@@ -30,6 +30,18 @@ from query_pulse.sources.schemas import (
 logger = logging.getLogger(__name__)
 
 
+def connection_fields(source: DataSource) -> ConnectionFields:
+    """A saved source's connection target, for re-using its stored password."""
+    return ConnectionFields(
+        engine=source.engine,
+        host=source.host,
+        port=source.port,
+        database=source.database,
+        username=source.username,
+        tls_mode=source.tls_mode,  # constrained on the way in
+    )
+
+
 def params_for(fields: ConnectionFields, password: str, timeout: float) -> ConnectionParams:
     return ConnectionParams(
         host=fields.host,

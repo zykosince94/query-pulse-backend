@@ -39,6 +39,8 @@ class CollectorState(Base):
 
     last_relation_stats_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_capability_check_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Last full re-capture of the top operations' plans (new operations are planned sooner).
+    last_plan_capture_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class CollectorHeartbeat(Base):

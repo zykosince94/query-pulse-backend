@@ -32,8 +32,8 @@ from query_pulse.crypto import CredentialCipher
 from query_pulse.db import utcnow
 from query_pulse.sources import service as sources
 from query_pulse.sources.models import DataSource, SourceEngine, SourceStatus
-from query_pulse.sources.schemas import ConnectionFields
-from query_pulse.workload.models import Fingerprint, Observation, RelationStat
+from query_pulse.workload import plans
+from query_pulse.workload.models import Fingerprint, Observation, Plan, RelationStat
 
 logger = logging.getLogger(__name__)
 
@@ -53,17 +53,6 @@ def _due(last: datetime | None, every_seconds: float, now: datetime) -> bool:
     if last.tzinfo is None:
         last = last.replace(tzinfo=now.tzinfo)
     return (now - last).total_seconds() >= every_seconds
-
-
-def _connection_fields(source: DataSource) -> ConnectionFields:
-    return ConnectionFields(
-        engine=source.engine,
-        host=source.host,
-        port=source.port,
-        database=source.database,
-        username=source.username,
-        tls_mode=source.tls_mode,
-    )
 
 
 def _snapshot(reading: StatementsReading, taken_at: datetime) -> Snapshot:
@@ -133,7 +122,7 @@ class Collector:
         self, session: AsyncSession, source: DataSource, state: CollectorState, now: datetime
     ) -> CycleOutcome:
         params = sources.params_for(
-            _connection_fields(source),
+            sources.connection_fields(source),
             sources.stored_password(source, self.cipher),
             self.settings.source_connect_timeout_seconds,
         )
@@ -159,10 +148,12 @@ class Collector:
                 else None
             )
 
-        current = _snapshot(reading, now)
-        previous = Snapshot.from_json(state.snapshot) if state.snapshot else None
-        result = compute_deltas(previous, current)
-        stored = await self._store(session, source, reading, result)
+            current = _snapshot(reading, now)
+            previous = Snapshot.from_json(state.snapshot) if state.snapshot else None
+            result = compute_deltas(previous, current)
+            stored = await self._store(session, source, reading, result)
+            if plans.plans_available(source):
+                await self._capture_plans(session, source, state, conn, now)
 
         # The current snapshot becomes the baseline for the next cycle, even when this
         # interval was discarded (after a reset, counting restarts from here).
@@ -261,6 +252,51 @@ class Collector:
             )
         return len(result.deltas)
 
+    async def _capture_plans(
+        self,
+        session: AsyncSession,
+        source: DataSource,
+        state: CollectorState,
+        conn: plans.Connection,
+        now: datetime,
+    ) -> None:
+        """Plan the source's busiest operations of the last hour.
+
+        A full re-capture runs every `collector_plan_seconds`; in between, only operations
+        that have no plan yet are planned, so a new hot query gets its plan within a cycle.
+        Planning is bounded to a third of the cycle timeout: running out of time just leaves
+        the rest for the next cycle instead of failing the whole collection.
+        """
+        top = await plans.top_fingerprints(
+            session, source.id, now - timedelta(hours=1), self.settings.collector_plan_top_n
+        )
+        full = _due(state.last_plan_capture_at, self.settings.collector_plan_seconds, now)
+        if not full:
+            done = await plans.planned_ids(session, [f.id for f in top])
+            top = [f for f in top if f.id not in done]
+        # The budget covers only the EXPLAIN calls: cancelling one of our own app-database
+        # writes halfway could leave the session unusable for the rest of the cycle.
+        deadline = asyncio.get_running_loop().time() + (
+            self.settings.collector_cycle_timeout_seconds / 3
+        )
+        for planned, fingerprint in enumerate(top):
+            try:
+                async with asyncio.timeout_at(deadline):
+                    plan, error = await plans.explain(
+                        self.adapter, conn, fingerprint, source.username
+                    )
+            except TimeoutError:
+                logger.warning(
+                    "collector: source=%s planning stopped after %d of %d (time budget)",
+                    source.name,
+                    planned,
+                    len(top),
+                )
+                return
+            await plans.record_plan(session, fingerprint, plan, error, now)
+        if full:
+            state.last_plan_capture_at = now
+
     @staticmethod
     def _record_failure(
         source: DataSource, state: CollectorState, message: str, code: ErrorCode, now: datetime
@@ -279,13 +315,15 @@ class Collector:
         return CycleOutcome(ok=False, consecutive_failures=state.consecutive_failures)
 
     async def purge_old_data(self) -> int:
-        """Delete observations and relation samples older than the retention period."""
+        """Delete observations, relation samples and plans older than the retention period."""
         cutoff = utcnow() - timedelta(days=self.settings.retention_days)
         async with self.sessionmaker() as session:
             removed = 0
             for statement in (
                 delete(Observation).where(Observation.interval_end < cutoff),
                 delete(RelationStat).where(RelationStat.captured_at < cutoff),
+                # A plan still being re-checked keeps a recent checked_at, so it stays.
+                delete(Plan).where(Plan.checked_at < cutoff),
             ):
                 result = await session.execute(statement)
                 removed += int(getattr(result, "rowcount", 0) or 0)

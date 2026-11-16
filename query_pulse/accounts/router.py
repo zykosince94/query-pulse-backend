@@ -7,6 +7,7 @@ from sqlalchemy import select
 from query_pulse.accounts.dependencies import SESSION_USER_KEY, CurrentUser, SessionDep
 from query_pulse.accounts.models import Role, User
 from query_pulse.accounts.passwords import hash_password, needs_rehash, verify_password
+from query_pulse.accounts.ratelimit import LoginRateLimiter
 from query_pulse.config import Settings
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -27,10 +28,26 @@ class UserOut(BaseModel):
         return cls(username=user.username, role=user.role, read_only=user.is_read_only)
 
 
-@router.post("/login", response_model=UserOut, operation_id="login")
+@router.post(
+    "/login",
+    response_model=UserOut,
+    operation_id="login",
+    responses={429: {"description": "Too many failed sign-ins from this client; retry later"}},
+)
 async def login(payload: LoginRequest, request: Request, session: SessionDep) -> UserOut:
+    limiter: LoginRateLimiter = request.app.state.login_limiter
+    client = request.client.host if request.client else "unknown"
+    # Checked before the password, so a locked-out client learns nothing by guessing.
+    retry_after = limiter.retry_after(client)
+    if retry_after is not None:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed sign-ins. Try again in {retry_after} seconds.",
+            headers={"Retry-After": str(retry_after)},
+        )
     user = await session.scalar(select(User).where(User.username == payload.username))
     if not verify_password(user.password_hash if user else None, payload.password) or not user:
+        limiter.record_failure(client)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password")
 
     if needs_rehash(user.password_hash):

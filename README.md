@@ -43,11 +43,24 @@ The React UI lives in [query-pulse-frontend](https://github.com/zykosince94/quer
   samples table and index statistics, re-checks capabilities, backs off when a database is down
   (and recovers on its own), and deletes data older than 14 days.
 - **Workload read API**: per-minute trends per source and a health summary for the home page.
+- **Workload explorer API**: operations ranked by total time, mean time or calls over any time
+  window (the last N minutes, or absolute start/end), filtered by source and statement text.
+  Each operation has its metrics over the window and a history per minute or hour (`date_trunc`
+  buckets in SQL). Mean time is total time ÷ calls over the whole window, never an average of
+  averages.
+- **Generic query plans**: `EXPLAIN (GENERIC_PLAN, FORMAT JSON)` on the normalised `$1` text,
+  which never executes the statement (QP-AC-15 checks its call count doesn't move). The
+  collector plans each source's 20 busiest operations every 5 minutes, and new hot operations
+  within a cycle. Plans are stored as immutable evidence: a new row only when the plan changes.
+  When a statement can't be planned (missing `SELECT` grant, cut-off text, utility statement),
+  the reason is stored and shown instead of an empty viewer.
+- **Hardening**: an Origin check on every state-changing request (cross-site writes get 403), a
+  login rate limit (10 failures per client per 5 minutes, then 429), and JSON logs where every
+  line carries the request ID, which is also returned in the `X-Request-ID` header.
 - **Demo data**: a seeded e-commerce database with four planted problems (P1–P4) and a workload
   that runs them next to healthy controls, so `make demo` has real traffic to measure.
 
-Not yet: the workload explorer and query plans (Phase 4), findings (Phase 5), MongoDB
-collection (Phase 6).
+Not yet: findings (Phase 5), MongoDB collection (Phase 6), the AI assistant (Phase 7).
 
 ## Quick start
 
@@ -68,7 +81,9 @@ curl localhost:8000/ready
 `make demo` also starts the **collector** (every 15 s in the demo) and the **demo workload**.
 Add the demo database as a source in the UI (host `demo-postgres`, port 5432, database `shop`,
 user `querypulse_monitor`, password `monitor`) and the home page shows its activity within a
-minute.
+minute. After a couple of minutes the planted problem P1 (`orders` looked up by `customer_id`,
+which has no index) is at the top of the explorer, and its plan shows the sequential scan.
+[docs/demo-checklist.md](docs/demo-checklist.md) walks through the whole demo.
 
 ## Development
 
@@ -93,8 +108,15 @@ uv run uvicorn query_pulse.main:create_app --factory --reload
 
 Unit tests run against a fresh SQLite database per test, built by the real Alembic migrations,
 with a fake adapter for monitored databases. Integration tests in `tests/integration/` start real
-PostgreSQL 16 and MongoDB 7 containers (testcontainers) for the permission matrix and connection
-failures. They need Docker; without it they're skipped locally, and CI always runs them.
+PostgreSQL 16 and MongoDB 7 containers (testcontainers) for the permission matrix, connection
+failures, the collector and plans. They need Docker; without it they're skipped locally, and CI
+always runs them. Acceptance tests in `tests/acceptance/` run over HTTP against the full stack
+under the demo workload:
+
+```bash
+make demo
+QP_ACCEPTANCE_URL=http://127.0.0.1:8000 uv run pytest tests/acceptance
+```
 
 **Windows:** psycopg's async mode can't use Windows' default event loop. The tests handle this
 themselves. To run the API outside Docker on Windows, use `--reload` (as above), which makes
@@ -104,18 +126,22 @@ uvicorn use a compatible loop, or run it with `make demo`.
 
 - [Functionality reference](docs/functionality.md): every screen, endpoint, setting and security
   behaviour across the backend and frontend, as of today.
+- [Demo checklist](docs/demo-checklist.md): the scripted demo, run by hand before every release.
+- [Architecture decision records](docs/adr/): why the stack looks the way it does.
 
 ## Layout
 
 ```
 query_pulse/
   main.py         app factory, /health and /ready
+  http.py         request IDs and access log, Origin check
+  log.py          JSON logging
   config/         settings validated from the environment
   db.py           engine, sessions, declarative base
-  accounts/       users, password hashing, sessions, access guards, bootstrap command
+  accounts/       users, password hashing, sessions, access guards, login rate limit, bootstrap
   sources/        data sources: models, schemas, service, API
   collector/      delta engine, collection cycle, supervisor, `python -m query_pulse.collector`
-  workload/       fingerprints, observations, table stats; trend and health API
+  workload/       fingerprints, observations, table stats, plans; explorer, plan and trend APIs
   demo/           demo seed and workload (not part of the product)
   adapters/       PostgreSQL and MongoDB adapters (connect, version, capabilities)
   crypto.py       Fernet encryption for stored credentials
@@ -132,6 +158,11 @@ Planned packages (`findings/`, `ai/`) are added in the phase that needs them.
 - **Secrets** are `SecretStr` in settings and never returned by the API or logged. Source
   credentials are Fernet-encrypted at rest and decrypted only in `sources/service.py`.
 - **Write endpoints** must depend on `Writer` (`query_pulse/accounts/dependencies.py`).
+- **Logging**: use `logging.getLogger(__name__)`; pass structured fields with `extra=`. Never
+  format a secret, a connection string or a query string into a message.
+- **SQL sent to a monitored database** is fixed text in `adapters/postgres.py`, marked with
+  `/* query-pulse */`. The one exception, EXPLAIN of collected statement text, goes through
+  `plannable_text()` first (see ADR 0004).
 - **API changes**: run `make openapi` and commit `openapi.json` in the same commit.
 
 ## License
