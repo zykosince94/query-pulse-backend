@@ -135,9 +135,11 @@ which has no index) is at the top of the explorer, and its plan shows the sequen
 Within about three minutes the Findings page shows one finding for each planted problem, P1–P4,
 and none for the healthy controls.
 
-To try the AI assistant, open Settings, choose OpenAI, enter a model id and your API key, tick
-"Turn the AI assistant on" and save; then open any finding's **AI assistant**. It stays off
-otherwise, and makes no request.
+Each planted problem's **AI assistant** already shows an explanation and a draft fix: sample
+answers written in advance for the demo (labelled as such), so the demo shows the assistant
+without a key. For live answers, open Settings, choose OpenAI (or point `QP_OPENAI_BASE_URL` at
+an OpenAI-compatible gateway such as OpenRouter), enter a model id and your API key, tick "Turn
+the AI assistant on" and save. It makes no request otherwise.
 
 Add the demo MongoDB the same way (engine MongoDB, host `mongo`, port 27017, database `shop`,
 no username: the local demo runs without auth). The demo seed has already turned its profiler

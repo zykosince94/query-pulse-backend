@@ -69,6 +69,8 @@ Rules:
 - Use only the evidence bundle. Do not invent numbers, tables, indexes or settings.
 - Every claim must cite the ids of the evidence items that support it, exactly as written in the
   bundle (for example "fact:table_rows" or "plan:0.1"). A claim you can't support, leave out.
+- Only the "id" of an entry in "items" can be cited. Other keys in the bundle, such as "note" or
+  "bundle_version", are not evidence: never cite them.
 - Query literals are redacted as ? or '?'. Don't guess them.
 - Plans are estimates; say so when it matters.
 - Be brief: a one-sentence summary and at most five claims.

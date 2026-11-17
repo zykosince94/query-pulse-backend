@@ -138,7 +138,8 @@ services:
       retries: 3
 
   # Seeds the demo databases (once) and then runs the planted-problem workloads forever:
-  # P1-P4 on PostgreSQL, M1-M3 on MongoDB (whose profiler the seed turns on, as a user would).
+  # P1-P4 on PostgreSQL, M1-M3 on MongoDB (whose profiler the seed turns on, as a user would),
+  # and attaches sample AI answers to their findings (query_pulse/demo/ai_samples.py).
   demo-workload:
     image: query-pulse-backend:local
     command:
@@ -156,6 +157,8 @@ services:
       QP_DEMO_MONGO_RATE: ${QP_DEMO_MONGO_RATE:-10}
       QP_DEMO_MONGO_ORDERS: ${QP_DEMO_MONGO_ORDERS:-50000}
       QP_DEMO_MONGO_PRODUCTS: ${QP_DEMO_MONGO_PRODUCTS:-20000}
+      # Lets the demo attach sample AI answers (written in advance) to the planted findings.
+      QP_DEMO_APP_DATABASE_URL: postgresql+psycopg://querypulse:querypulse@app-db:5432/querypulse
     depends_on:
       demo-postgres:
         condition: service_healthy

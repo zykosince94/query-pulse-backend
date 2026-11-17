@@ -126,9 +126,13 @@ With AI off (a fresh stack):
 
 - [ ] Settings shows the AI assistant **Off**, "Requests made by this server since it started:
       0", and the collection settings (15 s interval, 14 days) read-only.
-- [ ] On the P1 finding, open **AI assistant**: "AI is off" with a link to Settings, no
-      Explain or Draft buttons. **View what is sent** shows the bundle: `rule`, `fact:…`,
-      `plan:0` with `(customer_id = $1)`, `table:public.orders`; no host, user or password.
+- [ ] On the P1 finding, open **AI assistant**: an explanation and a draft fix, each badged
+      **Sample answer** and "Written in advance for the demo, not generated live", with every
+      claim's evidence ids; the draft is `CREATE INDEX CONCURRENTLY … (customer_id)`. The panel
+      says these are samples and that live answers need AI on. No Explain or Draft buttons.
+      Every planted problem (P1–P4, M1–M3) has its pair; open M1 for a mongosh draft.
+- [ ] **View what is sent** shows the bundle: `rule`, `fact:…`, `plan:0` with
+      `(customer_id = $1)`, `table:public.orders`; no host, user or password.
 
 With your OpenAI key (each request is billed to your account):
 

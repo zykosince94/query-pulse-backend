@@ -42,6 +42,12 @@ inventing things, and how to test it without a key or a bill.
 - **An evaluation set** (`evals/bundles/`, saved from the demo) with `make ai-eval` scores the
   real model on the seven planted problems: right cause, valid citations, no forbidden action.
 
+- **The demo carries sample answers, written in advance** (added after v1.0.0, the owner's
+  decision). A demo visitor would otherwise only see "AI is off". Samples for the seven planted
+  problems are stored with the provider `sample` after the same checks as a provider's answer,
+  are labelled as written in advance everywhere they appear, and are attached only by the
+  demo-workload service, never by the product. A live answer always wins over a sample.
+
 ## Consequences
 
 - With AI off, Query Pulse is exactly what it was: QP-AC-26 checks the provider request counter

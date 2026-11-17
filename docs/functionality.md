@@ -121,8 +121,46 @@ works without CORS.
 
 ### 3.6 Appearance
 
-- Light and dark themes, following the operating system's setting at page load.
+- **Light and dark mode and three colour themes** are chosen on the **Settings** page, in an
+  **Appearance** card (everyone can use it, the read-only demo user too, because it only
+  affects this browser). Mode is Light or Dark; until you choose, the app follows the operating
+  system's setting (and its changes). The themes are Pulse (blue, the default), Lagoon (teal)
+  and Dusk (violet). They are real radio buttons, so the arrow keys move between them. Mode and
+  theme are independent, so there are six looks. The status colours (red,
+  amber, green) are the same in every theme. Every text and chart colour pair meets WCAG AA in
+  all six; the end-to-end axe check covers light and dark.
+- The choice is applied before the first paint (no flash) and kept in `localStorage`; if
+  storage is blocked or holds junk, the defaults apply and nothing breaks. Charts redraw in the
+  new colours at once.
 - All colours come from design tokens (`src/styles/tokens.css`).
+- **Loading overlays**: a veil with a spinner and a message covers what is loading: the
+  findings list while another tab or filter loads ("Updating findings…", not on the quiet
+  30-second refresh), an AI panel while the provider answers (with the seconds waited), and the
+  whole window when a page or the first sign-in check takes more than 300 ms.
+- **Logo**: a database cylinder with a pulse (heartbeat) running through it
+  (`src/components/Logo.tsx`; also the browser-tab icon, `public/favicon.svg`). It takes the
+  current colour, so it follows the theme. It is decoration only (hidden from assistive
+  technology), shown beside the name in the sidebar and on the sign-in screen, and as a faint
+  background: very large and faint on the sign-in screen, much fainter behind every signed-in
+  page. The faint layers never catch the pointer and sit at an opacity where text over them keeps
+  its contrast (axe-checked in all six looks).
+- **Sign-in screen**: on wide screens, a side panel carries the story beside the form: the
+  headline "Your database is talking. We translate.", a description, and three short points in
+  the order a finding travels: **Rules find it** (deterministic rules over the workload and
+  plans, each finding citing its evidence), **AI explains it** (an optional assistant that
+  explains a finding and drafts a fix, sees only a redacted evidence bundle, must cite it, and
+  has its answer discarded if it cites anything that wasn't sent) and **You decide**
+  (read-only connections; a draft is never run). On narrow screens only the form shows, under
+  the brand. Below the demo button, a note says the demo is read-only, needs no password and
+  has sample AI answers. Colours follow the theme.
+- **Credit line**: "Developed by Rishabh Pandey | https://zykosince94.github.io" (the address is
+  a link that opens in a new tab) on the sign-in screen and at the foot of every page.
+- **Background refresh indicator** (bottom right, signed-in screens): a small pill shows
+  **Updating…** while data is refreshed (kept up for a moment so a fast refresh is still seen),
+  **Live · updated 12 s ago** otherwise (the time keeps counting), **Couldn't update · retry**
+  when a refresh failed, and **Offline · updates paused** without a connection. Clicking it
+  refreshes the visible data now. Screen readers are told only about failures and being offline,
+  never about every tick.
 
 ### 3.7 Data sources
 
@@ -181,6 +219,20 @@ works without CORS.
   notice says the charts won't update.
 - Data refreshes every 30 seconds. The current, unfinished minute is left out of every trend, so
   charts don't show a false drop at the right edge.
+
+**Home (`/`): calls vs mean time**
+- Above the explorer's table (when it lists three operations or more), a scatter chart of the
+  same operations: **calls** (x) against **mean time** (y), both on logarithmic axes, each dot
+  sized by its **total time**. Dashed lines mark the medians, so the top right is "frequent and
+  slow": the best things to fix. The three costliest dots are labelled.
+- A sentence says it in words: "Of the 34 shown, 9 are both frequent and slow, and together they
+  take 99% of the time shown". That share comes from the operations' times, not from adding their
+  per-source shares, which would pass 100% across two sources.
+- Hovering a dot shows its operation, calls, mean, total and share; clicking it opens the
+  operation over the same time range. **Show data** lists the same operations as a table with
+  links (built only when opened). The chart follows the explorer's filters and time range.
+- Sub-millisecond times keep two significant figures ("0.053 ms"), since the log axis separates
+  them.
 
 **Home (`/`): workload explorer**
 - One table of operations from both engines, ranked by **total time** (default), **mean
@@ -269,9 +321,20 @@ Charts are drawn with ECharts, loaded only when a chart is first shown. Their co
 ### 3.9 Findings
 
 **Findings page (`/findings`)**
-- Tabs for **Open** (default), **Dismissed** and **Resolved**, each with its count, plus
-  **Source** and **Rule** filters. All three live in the URL.
-- One card per finding, most confident and most recently seen first:
+- A segmented switch for **Open** (default), **Dismissed** and **Resolved**, each with its
+  count, plus **Source** and **Rule** filters and, while one is set, **Clear filters**. All
+  three live in the URL. While the first load runs, grey placeholder cards keep the page's
+  shape; an empty list shows a short, friendly explanation.
+- One card per finding, most confident and most recently seen first. The key numbers are tiles,
+  and the sections (suggested next step, evidence, AI assistant, history) are spaced apart. The
+  **title is a link** for findings about an operation: it opens the operation on the plan the
+  finding cites (or over the window it was raised on when there is no plan); index and table
+  findings have no page of their own, so their title is plain text. The
+  **AI assistant** is a tinted panel with an icon, a one-line invitation ("Want it in plain
+  words?") and an **AI assistant** button. A finding that already has an explanation or a
+  draft (asked for earlier, or the demo's samples) shows the panel **open**; one without stays
+  collapsed until opened, and opening or closing it yourself always wins. Deciding that is one
+  cheap read per card; the model is only called by the admin's Explain or Draft button:
   - the rule id, the **confidence** (high, medium, low), and the evidence kind: **Plan
     evidence** (read from a captured plan) or **Statistics heuristic** (inferred from counters;
     check before acting);
@@ -605,6 +668,17 @@ collected after the resolution (§6).
 - **OpenAI** is called with Chat Completions and a strict JSON schema; the key is checked by
   retrieving the model. Errors become messages (refused key, unknown model, no quota, rate
   limit, server error, timeout) that never include the key or OpenAI's own error text.
+- **Sample answers in the demo.** A fresh demo stack has AI off, so the demo stores answers
+  written in advance for the seven planted problems (`query_pulse/demo/ai_samples.py`, run by
+  the `demo-workload` service every 15 s). They are stored like real answers with the provider
+  `sample`, and only after passing the same checks (every citation must be in the finding's
+  bundle; no destructive statements). Claims cite fact ids, never their drifting values.
+  There is one sample row per finding and kind: when the evidence hash changes (live counts
+  cross the hash's two-significant-figure rounding every few minutes), the sample is re-pointed
+  at the new evidence rather than duplicated. A real provider's answer is never touched. The
+  panel badges them **Sample answer** ("Written in advance for the demo, not generated live"),
+  doesn't call them out of date, and with AI off says they are samples and live answers need
+  AI on. Deployments without the demo service never get them.
 - **Gateways.** With `QP_OPENAI_BASE_URL` pointing at an OpenAI-compatible gateway (for example
   `https://openrouter.ai/api/v1`), the provider is still "OpenAI" in Settings, and model ids may
   look like `author/model:tag`. The key is checked at `GET /key` (where the gateway has it) and
@@ -878,7 +952,7 @@ The API container runs the first three in order on every start.
 | `app-db` | 5432 | PostgreSQL 16, the app's own database | `querypulse` / `querypulse` |
 | `demo-postgres` | 5433 | PostgreSQL 16 to be monitored, with `pg_stat_statements` and the read-only role `querypulse_monitor` (`pg_monitor`) | `postgres` / `postgres`; monitor: `querypulse_monitor` / `monitor` |
 | `collector` | — | The collector, polling every 15 s in the demo, with rules every cycle and table/index samples every minute; healthy while its heartbeat is fresh | — |
-| `demo-workload` | — | Seeds both demo databases once (and turns on MongoDB's profiler for `shop`), then runs the P1–P4 workload at 20 queries/s and the M1–M3 workload at 10 operations/s | `shop_app` / `shop-app` (demo role) |
+| `demo-workload` | — | Seeds both demo databases once (and turns on MongoDB's profiler for `shop`), then runs the P1–P4 workload at 20 queries/s and the M1–M3 workload at 10 operations/s, and attaches sample AI answers to the planted findings (it reads the app database for that, `QP_DEMO_APP_DATABASE_URL`) | `shop_app` / `shop-app` (demo role) |
 | `mongo` | 27017 | MongoDB 7, single-node replica set `rs0`, to be monitored. From the host use `mongodb://localhost:27017/?directConnection=true`; from the stack, host `mongo`, database `shop`, no username. | none |
 
 All ports listen on `127.0.0.1` only, so the databases, with their default credentials and

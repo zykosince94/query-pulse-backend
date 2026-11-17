@@ -228,11 +228,18 @@ def main() -> None:
     rate = float(os.environ.get("QP_DEMO_RATE", "20"))
     mongo_url = os.environ.get("QP_DEMO_MONGO_URL", DEFAULT_MONGO_URL)
     mongo_rate = float(os.environ.get("QP_DEMO_MONGO_RATE", "10"))
+    # The app database, only so sample AI answers can be attached to the planted findings.
+    app_database_url = os.environ.get("QP_DEMO_APP_DATABASE_URL", "")
 
     async def both() -> None:
         tasks = [run_forever(os.environ.get("QP_DEMO_WORKLOAD_DSN", DEFAULT_DSN), rate)]
         if mongo_url:
             tasks.append(run_mongo_forever(mongo_url, mongo_rate))
+        if app_database_url:
+            from query_pulse.db import create_engine, create_sessionmaker
+            from query_pulse.demo.ai_samples import run_forever as samples_forever
+
+            tasks.append(samples_forever(create_sessionmaker(create_engine(app_database_url))))
         await asyncio.gather(*tasks)
 
     asyncio.run(both())
