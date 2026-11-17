@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 
@@ -29,6 +30,12 @@ class AISettingsOut(BaseModel):
     updated_at: datetime | None
 
 
+# "gpt-4o", or a gateway's "author/model:tag". Each "/"-separated part starts with a letter or
+# digit, so no empty, "." or ".." segment can reach the request path; whitespace, "?", "#",
+# "%" and "\\" never match.
+_MODEL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:\-]*(/[A-Za-z0-9][A-Za-z0-9._:\-]*)*")
+
+
 class AISettingsUpdate(BaseModel):
     provider: str = Field(min_length=1, max_length=32)
     model: str = Field(min_length=1, max_length=100)
@@ -41,8 +48,8 @@ class AISettingsUpdate(BaseModel):
     @classmethod
     def _plain_model(cls, value: str) -> str:
         value = value.strip()
-        if not value or any(c.isspace() or c in "/?#" for c in value):
-            raise ValueError("Enter a model name only, e.g. the id shown in the provider's docs")
+        if not _MODEL_ID.fullmatch(value):
+            raise ValueError("Enter a model id only, e.g. gpt-4o, or author/model:tag on a gateway")
         return value
 
 

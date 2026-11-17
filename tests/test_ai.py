@@ -33,6 +33,7 @@ from query_pulse.ai.evidence import (
     redact_text,
 )
 from query_pulse.ai.provider import FakeProvider, OpenAIProvider, ProviderError
+from query_pulse.ai.schemas import AISettingsUpdate
 from query_pulse.config import Settings
 from query_pulse.crypto import CredentialCipher
 from query_pulse.db import create_engine, create_sessionmaker
@@ -360,6 +361,116 @@ def test_openai_timeout_and_refusal() -> None:
     )
     with pytest.raises(ProviderError, match="declined"):
         run(refusal.complete(model="m", system="s", user="u", schema_name="n", schema={}))
+
+
+# --- OpenAI-compatible gateways (OpenRouter) over a mocked transport ---------------------------
+
+GATEWAY = "https://openrouter.ai/api/v1"
+GATEWAY_MODEL = "inclusionai/ling-3.2-flash:free"
+
+
+def gateway(handler: Callable[[httpx.Request], httpx.Response]) -> OpenAIProvider:
+    return OpenAIProvider(
+        "sk-or-test-key-wxyz", GATEWAY, transport=httpx.MockTransport(handler), timeout=5
+    )
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["gpt-4o", "o3-mini", "ft:gpt-4o:acme::id1", GATEWAY_MODEL, "recursive/flint-v1.0:free"],
+)
+def test_model_ids_for_openai_and_gateways_are_accepted(model: str) -> None:
+    assert AISettingsUpdate(provider="openai", model=model).model == model
+
+
+@pytest.mark.parametrize(
+    "model",
+    ["has spaces", "a/../b", "../x", "/x", "x/", "a//b", "m?x=1", "m#frag", "m%2e", "a\\b", "m\nn"],
+)
+def test_model_ids_that_could_change_the_request_path_are_refused(model: str) -> None:
+    with pytest.raises(ValueError, match="model id only"):
+        AISettingsUpdate(provider="openai", model=model)
+
+
+def test_a_gateway_check_uses_the_key_endpoint_and_the_model_list() -> None:
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        assert request.headers["Authorization"] == "Bearer sk-or-test-key-wxyz"
+        if request.url.path.endswith("/key"):
+            return httpx.Response(200, json={"data": {"label": "x"}})
+        return httpx.Response(200, json={"data": [{"id": GATEWAY_MODEL}, {"id": "other/m"}]})
+
+    run(gateway(handler).check(GATEWAY_MODEL))
+    assert seen == ["/api/v1/key", "/api/v1/models"]
+
+
+def test_a_gateway_check_refuses_a_bad_key_and_an_unlisted_model() -> None:
+    bad_key = gateway(lambda _: httpx.Response(401, json={"error": {"code": 401}}))
+    with pytest.raises(ProviderError, match="openrouter.ai rejected the API key"):
+        run(bad_key.check(GATEWAY_MODEL))
+
+    def no_key_endpoint(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/key"):
+            return httpx.Response(404, json={})
+        return httpx.Response(200, json={"data": [{"id": "other/m"}]})
+
+    with pytest.raises(ProviderError, match=f"doesn't list model '{GATEWAY_MODEL}'"):
+        run(gateway(no_key_endpoint).check(GATEWAY_MODEL))
+    # A gateway without /key still works when the model is listed.
+    ok = gateway(
+        lambda r: (
+            httpx.Response(404, json={})
+            if r.url.path.endswith("/key")
+            else httpx.Response(200, json={"data": [{"id": GATEWAY_MODEL}]})
+        )
+    )
+    run(ok.check(GATEWAY_MODEL))
+
+
+def test_the_official_check_keeps_a_model_id_in_one_path_segment() -> None:
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"id": "x"})
+
+    run(openai(handler).check("ft:gpt-4o:acme::id1/extra"))
+    [request] = seen
+    assert request.url.raw_path == b"/v1/models/ft%3Agpt-4o%3Aacme%3A%3Aid1%2Fextra"
+
+
+def test_a_model_that_wraps_its_json_in_a_fence_is_still_read() -> None:
+    fenced = '```json\n{"summary": {"text": "x", "evidence": ["rule"]}}\n```'
+    provider = gateway(
+        lambda _: httpx.Response(200, json={"choices": [{"message": {"content": fenced}}]})
+    )
+    result = run(
+        provider.complete(
+            model=GATEWAY_MODEL, system="s", user="u", schema_name="explanation", schema={}
+        )
+    )
+    assert result == {"summary": {"text": "x", "evidence": ["rule"]}}
+    broken = gateway(
+        lambda _: httpx.Response(
+            200, json={"choices": [{"message": {"content": "```not json```"}}]}
+        )
+    )
+    with pytest.raises(ProviderError, match="wasn't valid JSON"):
+        run(broken.complete(model="m", system="s", user="u", schema_name="n", schema={}))
+
+
+def test_a_request_that_trickles_on_past_the_deadline_is_cut_off() -> None:
+    async def trickle(_: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(5)  # a gateway holding a queued request open
+        return httpx.Response(200, json={})
+
+    provider = OpenAIProvider(
+        "sk-test-key-abcd", GATEWAY, transport=httpx.MockTransport(trickle), timeout=0.2
+    )
+    with pytest.raises(ProviderError, match="openrouter.ai didn't answer within 0.2 s"):
+        run(provider.complete(model="m", system="s", user="u", schema_name="n", schema={}))
 
 
 # --- the API, end to end with the fake provider ------------------------------------------------

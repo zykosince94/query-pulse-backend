@@ -13,7 +13,10 @@ inventing things, and how to test it without a key or a bill.
 - **One provider, OpenAI, behind a two-method interface** (`complete`, `check`) in
   `ai/provider.py`, called with plain HTTP: Chat Completions with a strict JSON schema, so the
   answer can only have the shape the server validates. The base URL is configurable
-  (`QP_OPENAI_BASE_URL`) for compatible gateways. The key is the admin's own, Fernet-encrypted
+  (`QP_OPENAI_BASE_URL`) for compatible gateways such as OpenRouter: the model id may then be
+  `author/model:tag` (validated and URL-encoded, never free path text), the key is checked at
+  `GET /key` and the model against `GET /models`, and a model that ignores the strict schema
+  is still held to it, because the answer is parsed and checked the same way. The key is the admin's own, Fernet-encrypted
   like source passwords, shown only by its last four characters, sent only to the provider it
   was saved for, and checked with the provider (retrieving the model) before AI is turned on.
 - **Off by default.** No request is ever made until an admin saves a provider, a model and a

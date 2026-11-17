@@ -605,6 +605,16 @@ collected after the resolution (§6).
 - **OpenAI** is called with Chat Completions and a strict JSON schema; the key is checked by
   retrieving the model. Errors become messages (refused key, unknown model, no quota, rate
   limit, server error, timeout) that never include the key or OpenAI's own error text.
+- **Gateways.** With `QP_OPENAI_BASE_URL` pointing at an OpenAI-compatible gateway (for example
+  `https://openrouter.ai/api/v1`), the provider is still "OpenAI" in Settings, and model ids may
+  look like `author/model:tag`. The key is checked at `GET /key` (where the gateway has it) and
+  the model against `GET /models`, because gateways can't all retrieve one model by id. Messages
+  name the gateway's host. A model that ignores the strict schema may wrap its JSON in a
+  ```` ```json ```` fence (read as plain JSON) or answer in the wrong shape (rejected, never
+  stored); prefer a model whose provider lists `structured_outputs`.
+- **Model ids** are checked before they reach a request path: letters, digits, `.`, `_`, `:`,
+  `-`, and `/` between parts that each start with a letter or digit. The id is URL-encoded when
+  OpenAI itself is asked to retrieve it.
 
 ---
 
@@ -822,7 +832,7 @@ error.
 | `QP_COLLECTOR_PROFILE_MAX_ENTRIES` | no | `10000` | MongoDB: profiler entries read per cycle at most (the rest wait for the next) |
 | `QP_COLLECTOR_SAMPLE_CACHE_SIZE` | no | `500` | MongoDB: read shapes per source whose newest command is held in collector memory for explain (never stored) |
 | `QP_RETENTION_DAYS` | no | `14` | Observations, table and server samples, and stale plans older than this are deleted daily |
-| `QP_OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Where OpenAI requests go (an OpenAI-compatible gateway works) |
+| `QP_OPENAI_BASE_URL` | no | `https://api.openai.com/v1` | Where OpenAI requests go; an OpenAI-compatible gateway works (see AI assistant), and compose passes it through |
 | `QP_AI_TIMEOUT_SECONDS` | no | `60` | How long an AI request may take (up to 300) |
 | `QP_AI_ALLOW_FAKE_PROVIDER` | no | `false` | Offers the fake provider (tests only); refused when `QP_ENVIRONMENT=prod` |
 | `QP_LOG_FORMAT` | no | `json` | `json` (one object per line) or `text` |

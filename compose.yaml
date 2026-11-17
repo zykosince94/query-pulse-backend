@@ -92,6 +92,9 @@ services:
       QP_DEMO_ENABLED: ${QP_DEMO_ENABLED:-true}
       QP_DEMO_USERNAME: ${QP_DEMO_USERNAME:-demo}
       QP_DEMO_PASSWORD: ${QP_DEMO_PASSWORD:-demo-password}
+      # Point the AI assistant at an OpenAI-compatible gateway (e.g. https://openrouter.ai/api/v1).
+      QP_OPENAI_BASE_URL: ${QP_OPENAI_BASE_URL:-https://api.openai.com/v1}
+      QP_AI_TIMEOUT_SECONDS: ${QP_AI_TIMEOUT_SECONDS:-60}
       # A short interval keeps the local demo lively; the production default is 60 s.
       QP_COLLECTOR_INTERVAL_SECONDS: ${QP_COLLECTOR_INTERVAL_SECONDS:-15}
       # Findings in minutes instead of hours, so the demo shows P1-P4 soon after starting:
